@@ -129,6 +129,7 @@ int main(int argc, char** argv)
     ui->set_resolution_index(ResolutionIndex(settings.video.outputHeight));
     ui->set_aa_index(AntiAliasingIndex(settings.video.antiAliasing));
     ui->set_touch_controls(settings.video.touchControls);
+    ui->set_texture_cache_index(settings.video.astcBlock == 6 ? 2 : settings.video.astcBlock == 4 ? 1 : 0);
     ui->set_version(slint::SharedString("0.1.0 // arm64"));
 
     RefreshGameState();
@@ -167,6 +168,12 @@ int main(int argc, char** argv)
         default: settings.video.antiAliasing = h3::config::AntiAliasing::Fxaa; break;
         }
         settings.video.touchControls = ui->get_touch_controls();
+        switch (ui->get_texture_cache_index())
+        {
+        case 1: settings.video.astcBlock = 4; break;
+        case 2: settings.video.astcBlock = 6; break;
+        default: settings.video.astcBlock = 0; break;
+        }
 
         std::error_code error;
         std::filesystem::create_directories(g_root, error);

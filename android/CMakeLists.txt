@@ -41,4 +41,20 @@ add_subdirectory(menu)
 # XenonUtils/disasm are static helpers; Slint's own targets above keep their
 # own shared/static choices.
 set(BUILD_SHARED_LIBS OFF)
+
+if (ANDROID_ABI STREQUAL "arm64-v8a")
+    set(ASTCENC_CLI OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_SHAREDLIB OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_NEON ON CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_NONE OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_NATIVE OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_SSE2 OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_SSE41 OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_ISA_AVX2 OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_WERROR OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_UNIT_TEST OFF CACHE BOOL "" FORCE)
+    set(ASTCENC_INVARIANCE OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${H3_ROOT}/thirdparty/astc-encoder" "${CMAKE_CURRENT_BINARY_DIR}/astcenc")
+endif()
+
 add_subdirectory(game)

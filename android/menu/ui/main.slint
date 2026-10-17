@@ -118,6 +118,7 @@ export component MainWindow inherits Window {
     in-out property <int> resolution-index: 2;
     in-out property <int> aa-index: 1;
     in-out property <bool> touch-controls: true;
+    in-out property <int> texture-cache-index: 0;
     in-out property <bool> importing: false;
     in-out property <string> version: "0.1.0 // arm64";
 
@@ -216,7 +217,7 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
 
             HorizontalLayout {
-                height: 370px;
+                height: 486px;
                 spacing: 8px;
 
                 // Left: game files
@@ -313,7 +314,7 @@ export component MainWindow inherits Window {
                     width: 52%;
 
                     Card {
-                        height: 250px;
+                        height: 352px;
                         title: "VIDEO";
                         subtitle: "Changes are written when you press Play.";
 
@@ -366,6 +367,26 @@ export component MainWindow inherits Window {
                                     horizontal-stretch: 1;
                                     clicked => { root.aa-index = i; }
                                 }
+                            }
+
+                            SettingLine {
+                                label: "TEXTURES";
+                                hint: "CPU NEON, app cache";
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                for label[i] in ["OFF", "ASTC 4x4", "ASTC 6x6"] : SegmentButton {
+                                    label: label;
+                                    selected: root.texture-cache-index == i;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.texture-cache-index = i; }
+                                }
+                            }
+                            Text {
+                                text: "BC textures are converted once and stored in app storage.";
+                                color: #7F947F;
+                                font-size: 9px;
+                                wrap: word-wrap;
                             }
                         }
                     }

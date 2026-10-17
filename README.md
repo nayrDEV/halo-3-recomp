@@ -73,9 +73,11 @@ saved profile settings, `private/hdd/profile_settings.bin`).
 
 An experimental Android arm64 port lives in `android/`: a Slint launcher for
 importing an ISO or game folder, video/control settings, and an SDL3 game
-activity with an on-screen Xbox 360 pad. The game code is still generated
-from your own `default.xex` on the build machine and compiled into the APK;
-the phone imports the disc data. See [docs/ANDROID.md](docs/ANDROID.md) for
+activity with an on-screen Xbox 360 pad. Game files are copied into the
+app's internal storage; BC textures can be converted to an ASTC cache for
+Mali GPUs. The game code is still generated from your own `default.xex` on
+the build machine and compiled into the APK; the phone imports the disc data.
+See [docs/ANDROID.md](docs/ANDROID.md) for
 the NDK/SDK setup, the shaderc and FFmpeg cross-builds, and the current
 limitations.
 

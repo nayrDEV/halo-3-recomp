@@ -168,6 +168,13 @@ namespace h3::gpu::renderer
         g_shaderCacheDirectory = error ? std::filesystem::path() : directory;
     }
 
+    void SetTextureCacheDirectory(const std::filesystem::path& directory)
+    {
+        std::error_code error;
+        std::filesystem::create_directories(directory, error);
+        g_textureCacheDirectory = error ? std::filesystem::path() : directory;
+    }
+
     bool IsEnabled()
     {
         return g_enabled;

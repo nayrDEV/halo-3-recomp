@@ -57,9 +57,7 @@ int main(int argc, char* argv[])
     // SDL_GetAndroidExternalStoragePath() usable before CreateMainWindow.
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);
 
-    const char* storage = SDL_GetAndroidExternalStoragePath();
-    if (!storage)
-        storage = SDL_GetAndroidInternalStoragePath();
+    const char* storage = SDL_GetAndroidInternalStoragePath();
     std::filesystem::path root = std::filesystem::path(storage ? storage : ".") / "Halo3";
     std::filesystem::path xexPath = root / "game" / "default.xex";
     std::filesystem::path contentRoot = root / "game";
@@ -121,8 +119,9 @@ int main(int argc, char* argv[])
         h3::kernel::AddSymbolicLink("cache" + std::to_string(i) + ":", "\\Device\\Harddisk0\\" + cache);
     }
 
-    // Compiled host shaders, kept between runs.
+    // Compiled host shaders and converted ASTC textures, kept between runs.
     h3::gpu::renderer::SetShaderCacheDirectory(shaderCache);
+    h3::gpu::renderer::SetTextureCacheDirectory(shaderCache.parent_path() / "texturecache");
 
     if (!h3::InitGuestMemory())
     {

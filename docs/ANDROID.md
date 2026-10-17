@@ -17,16 +17,23 @@ so the APK must be built on a PC; the phone only imports the disc data.
   missing instead of failing to load.
 - `libslintmenu.so` + `libslint_cpp.so` — launcher only.
 
-Game files are imported to:
+Game files are imported into the app's **private internal storage**
+(`Context.getFilesDir()`), so the whole game lives with the app:
 
 ```
-/sdcard/Android/data/org.h3recomp/files/Halo3/
+/data/user/0/org.h3recomp/files/Halo3/
     game/          default.xex + maps/ (extracted from your ISO or folder)
     hdd/           cache partitions and the saved profile
     shadercache/   compiled SPIR-V
+    texturecache/  converted ASTC texture blobs
     settings.ini
     h3recomp.log   (optional)
 ```
+
+The importer copies every file, not just the executable. Internal storage is
+usually smaller than `/sdcard`, so check free space before importing a full
+disc. Use `adb shell run-as org.h3recomp ls files/Halo3` on a debug build to
+inspect it.
 
 The ISO importer is an XDVDFS (XGD2/XGD1/XGD3/plain XISO) reader ported from
 `tools/xdvdfs_extract.py`; it copies the picked content to `game/`.
@@ -40,6 +47,9 @@ Halo 3 files.
 ```sh
 export ANDROID_HOME=$HOME/Android/Sdk
 export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865
+
+# SDL3 and the ASTC encoder
+git submodule update --init --recursive
 
 # The public XenonRecomp checkout lacks the Image::dataSize used by
 # H3Recomp/kernel/modules.cpp. Apply the small project patch once:
@@ -82,6 +92,7 @@ the stub. Add the XEX, rerun `tools/recompile.sh release`, and rebuild.
 | 360/480/720/1080p | `output_height` | presentation target; the game's internal target stays at 720p for now |
 | OFF/FXAA/SMAA/FSR | `anti_aliasing` | SMAA and FSR currently run the FXAA pass as a placeholder; selected output scaling is still applied |
 | On-screen controls | `touch_controls` | overlay + touch-to-XInput mapping |
+| Textures | `astc_block` | 0 off, 4 = ASTC 4x4, 6 = ASTC 6x6 (BC1-BC5 converted and cached) |
 
 The Android menu writes these when Play is pressed. The desktop launcher's
 existing settings keep working.
@@ -104,6 +115,13 @@ existing settings keep working.
   shaderc/glslang/SPIRV-Tools by `tools/build_shaderc_android.sh`.
 - **Window**: Android is always fullscreen; the window's SDL renderer
   letterboxes the game frame and draws the touch pad.
+- **ASTC textures** (`H3Recomp/gpu/texture_astc.cpp`, `texture_cache.cpp`):
+  BC1-BC5 textures are decoded with bcdec and re-encoded with Arm's
+  astcenc (NEON CPU encoder) when the menu selects ASTC 4x4 or 6x6. The
+  ASTC blob is stored in `texturecache/`, keyed by the guest content hash
+  and texture layout, and uploaded as an `SDL_GPU` ASTC texture. The first
+  use converts; later launches load the cache. 3D textures and
+  uncompressed/dynamic formats stay in their native host format.
 - **Touch**: `H3Recomp/input/touch.cpp` draws the Xbox 360 pad and merges
   its buttons/sticks/triggers with the gamepad and keyboard state.
 
@@ -115,6 +133,12 @@ existing settings keep working.
   platform layer, not the game.
 - SMAA and FSR need their dedicated shaders; the UI options currently map to
   FXAA plus the output-resolution blit.
+- ASTC conversion covers BC1-BC5 only. It is a CPU (NEON) encoder; there is
+  no GPU compute encoder yet. RGBA/R8/R16 and 3D textures remain native.
+  Conversion cost is paid on the first use of each texture, and the cache
+  can grow to hundreds of MB; `texturecache/` is safe to delete.
+- A Mali GPU that lacks BC but also lacks the chosen ASTC block size will
+  need a different block size (or a future uncompressed fallback).
 - The ISO importer copies the selected file/folder into app storage, so you
   need free space for both the source and the extracted copy.
 - Mobile GPU compatibility (storage buffers in vertex shaders, compute

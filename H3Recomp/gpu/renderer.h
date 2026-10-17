@@ -23,6 +23,8 @@ namespace h3::gpu::renderer
 
     // Where compiled SPIR-V is kept between runs (before Initialize).
     void SetShaderCacheDirectory(const std::filesystem::path& directory);
+    // Where converted ASTC textures are kept between runs (before Initialize).
+    void SetTextureCacheDirectory(const std::filesystem::path& directory);
 
     // H3_RENDER=0 turns host rendering off (the command processor still runs).
     bool IsEnabled();

@@ -136,6 +136,10 @@ namespace h3::config
         // Draw the on-screen Xbox 360 pad overlay and merge its touches
         // with a real gamepad / keyboard.
         bool touchControls = true;
+        // Convert BC textures to ASTC and cache them in the app (0 off,
+        // 4 or 6 = square ASTC block size). Mobile Mali GPUs generally
+        // sample ASTC but not BC.
+        int astcBlock = 0;
     };
 
     struct ProfileSettings

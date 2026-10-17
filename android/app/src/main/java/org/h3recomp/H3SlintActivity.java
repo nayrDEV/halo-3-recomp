@@ -37,8 +37,10 @@ public class H3SlintActivity extends NativeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        File external = getExternalFilesDir(null);
-        File base = external != null ? external : getFilesDir();
+        // Everything (game data, ASTC texture cache, saves) lives in the
+        // app's private internal storage; no external-storage permission is
+        // needed and the files move with the app.
+        File base = getFilesDir();
         gameRoot = new File(base, "Halo3");
         gameRoot.mkdirs();
 

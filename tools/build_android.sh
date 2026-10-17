@@ -21,6 +21,12 @@ if [[ ! -f "$ROOT/private/default.xex" && ! -f "$ROOT/private/default_patched.xe
     echo "See docs/DUMPING.md and docs/ANDROID.md." >&2
 fi
 
+for submodule in thirdparty/SDL3 thirdparty/astc-encoder; do
+    if [[ ! -e "$ROOT/$submodule/CMakeLists.txt" ]]; then
+        git -C "$ROOT" submodule update --init --recursive "$submodule"
+    fi
+done
+
 if ! grep -q 'dataSize' "$ROOT/thirdparty/XenonRecomp/XenonUtils/image.h"; then
     git -C "$ROOT/thirdparty/XenonRecomp" apply "$ROOT/tools/patches/xenonrecomp-halo3.patch"
 fi

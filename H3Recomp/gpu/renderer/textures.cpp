@@ -7,9 +7,15 @@
 
 #include "gpu/renderer/internal.h"
 
+#include "gpu/texture_astc.h"
+#include "gpu/texture_cache.h"
+#include "config/settings.h"
+
 #include <algorithm>
-#include <set>
+#include <cstdio>
+#include <filesystem>
 #include <functional>
+#include <set>
 
 namespace h3::gpu::renderer::internal
 {
@@ -75,6 +81,18 @@ namespace h3::gpu::renderer::internal
         // Hash seeds for g_frontTextures' keys: binds as 2D/cube, and as
         // layers (3D or stacked).
         constexpr uint64_t kFrontSeed = 0x46524F4E54ull, kFrontLayersSeed = 0x4C41594552ull;
+
+        // File name for a converted texture: content hash + layout hash +
+        // ASTC block size. Empty when no cache directory was set.
+        std::filesystem::path AstcCachePath(uint64_t contentHash, uint64_t layoutHash, int block)
+        {
+            if (g_textureCacheDirectory.empty())
+                return {};
+            char name[80];
+            snprintf(name, sizeof(name), "%016llx_%016llx_%d.astc",
+                static_cast<unsigned long long>(contentHash), static_cast<unsigned long long>(layoutHash), block);
+            return g_textureCacheDirectory / name;
+        }
 
         // A texture decoded from guest memory.
         struct CachedTexture
@@ -278,7 +296,8 @@ namespace h3::gpu::renderer::internal
                     (uint32_t(array) << 4) |
                     (faces << 8) | (levels << 20),
                 levels > 1 ? constant.mipAddress : 0 };
-            CachedTexture& cached = g_textures[Hash(layout, sizeof(layout))];
+            uint64_t layoutHash = Hash(layout, sizeof(layout));
+            CachedTexture& cached = g_textures[layoutHash];
             g_frontTextures[frontKey] = &cached;
             cached.usedFrame = g_swaps;
 
@@ -301,25 +320,53 @@ namespace h3::gpu::renderer::internal
             {
                 cached.changedFrame = g_swaps;
                 cached.changes++;
+                SDL_ReleaseGPUTexture(g_device, cached.texture);
+                cached.texture = nullptr;
+                g_textureBytes -= cached.bytes;
+                cached.bytes = 0;
             }
             if (cached.texture && contentHash == cached.contentHash)
                 return cached.texture;
 
+            SDL_GPUTextureType type = cube   ? SDL_GPU_TEXTURETYPE_CUBE
+                : volume                    ? SDL_GPU_TEXTURETYPE_3D
+                : array                     ? SDL_GPU_TEXTURETYPE_2D_ARRAY
+                                            : SDL_GPU_TEXTURETYPE_2D;
+            int astcBlock = 0;
+            if (!volume)
+            {
+                int configured = config::Active().video.astcBlock;
+                if (configured && texture::AstcSupported(g_device, type, configured))
+                    astcBlock = configured;
+            }
+
             SlowTimer timer{ "texture" };
             std::vector<texture::Decoded> decodedFaces(faces);
-            for (uint32_t face = 0; face < faces; face++)
-                if (!texture::Decode(fetch, guest + size_t(face) * stride, decodedFaces[face], true3D ? face : 0))
-                    return nullptr;
             std::vector<std::vector<texture::Decoded>> decodedMips(mips.size(), std::vector<texture::Decoded>(faces));
-            for (size_t i = 0; i < mips.size(); i++)
+            bool astcLoaded = false;
+            std::filesystem::path cachePath;
+            if (astcBlock)
             {
-                uint32_t mipStride = texture::FaceStride(mips[i]);
+                cachePath = AstcCachePath(contentHash, layoutHash, astcBlock);
+                if (!cachePath.empty() && texture::LoadAstcCache(cachePath, faces, levels, decodedFaces, decodedMips))
+                    astcLoaded = true;
+            }
+
+            if (!astcLoaded)
+            {
                 for (uint32_t face = 0; face < faces; face++)
-                {
-                    uint64_t address = uint64_t(mips[i].address) + uint64_t(face) * mipStride;
-                    if (address + texture::GuestSize(mips[i]) > kPhysicalMemorySize ||
-                        !texture::Decode(mips[i], GuestPtr<uint8_t>(PhysicalToGuest(uint32_t(address))), decodedMips[i][face]))
+                    if (!texture::Decode(fetch, guest + size_t(face) * stride, decodedFaces[face], true3D ? face : 0))
                         return nullptr;
+                for (size_t i = 0; i < mips.size(); i++)
+                {
+                    uint32_t mipStride = texture::FaceStride(mips[i]);
+                    for (uint32_t face = 0; face < faces; face++)
+                    {
+                        uint64_t address = uint64_t(mips[i].address) + uint64_t(face) * mipStride;
+                        if (address + texture::GuestSize(mips[i]) > kPhysicalMemorySize ||
+                            !texture::Decode(mips[i], GuestPtr<uint8_t>(PhysicalToGuest(uint32_t(address))), decodedMips[i][face]))
+                            return nullptr;
+                    }
                 }
             }
 
@@ -327,7 +374,7 @@ namespace h3::gpu::renderer::internal
             // decoded levels and layers (RGBA8 ones) as
             // tex_<address>_l<level>_<layer>.png when it's decoded.
             static const char* dumpTexture = EnvString("H3_DUMP_TEXTURE");
-            if (dumpTexture && uint32_t(strtoul(dumpTexture, nullptr, 16)) == constant.address)
+            if (!astcLoaded && dumpTexture && uint32_t(strtoul(dumpTexture, nullptr, 16)) == constant.address)
             {
                 auto save = [&](const texture::Decoded& decoded, uint32_t level, uint32_t layer) {
                     if (decoded.format != SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM)
@@ -348,14 +395,34 @@ namespace h3::gpu::renderer::internal
                         save(decodedMips[i][face], uint32_t(i) + 1, face);
             }
 
+            if (!astcLoaded && astcBlock)
+            {
+                std::vector<texture::Decoded> astcFaces(faces);
+                std::vector<std::vector<texture::Decoded>> astcMips(decodedMips.size(), std::vector<texture::Decoded>(faces));
+                bool encoded = true;
+                for (uint32_t face = 0; face < faces && encoded; face++)
+                    encoded = texture::EncodeAstc(decodedFaces[face], astcBlock, astcFaces[face]);
+                for (size_t i = 0; i < decodedMips.size() && encoded; i++)
+                    for (uint32_t face = 0; face < faces && encoded; face++)
+                        encoded = texture::EncodeAstc(decodedMips[i][face], astcBlock, astcMips[i][face]);
+                if (encoded)
+                {
+                    decodedFaces = std::move(astcFaces);
+                    decodedMips = std::move(astcMips);
+                }
+                else
+                {
+                    // Keep the native decode; some formats/levels cannot be
+                    // ASTC-encoded (or the device rejected the format).
+                    astcBlock = 0;
+                }
+            }
+
             if (!cached.texture)
             {
                 const texture::Decoded& decoded = decodedFaces[0];
                 SDL_GPUTextureCreateInfo info{};
-                info.type = cube   ? SDL_GPU_TEXTURETYPE_CUBE
-                    : volume       ? SDL_GPU_TEXTURETYPE_3D
-                    : array        ? SDL_GPU_TEXTURETYPE_2D_ARRAY
-                                   : SDL_GPU_TEXTURETYPE_2D;
+                info.type = type;
                 info.format = decoded.format;
                 info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
                 info.width = decoded.width;
@@ -383,6 +450,8 @@ namespace h3::gpu::renderer::internal
                 g_textureBytes += cached.bytes;
             }
             UploadTexture(cached.texture, decodedFaces, decodedMips, volume);
+            if (!astcLoaded && astcBlock && !cachePath.empty())
+                texture::SaveAstcCache(cachePath, faces, levels, decodedFaces, decodedMips);
             return cached.texture;
         }
 

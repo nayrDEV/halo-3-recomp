@@ -265,6 +265,7 @@ namespace h3::gpu::renderer::internal
 
     // Where compiled SPIR-V is cached between runs (empty: no cache).
     inline std::filesystem::path g_shaderCacheDirectory;
+    inline std::filesystem::path g_textureCacheDirectory;
 
     // The host shader for guest microcode (translated and compiled once).
     Shader* LoadShader(bool vertex, const uint32_t* dwords, uint32_t count);

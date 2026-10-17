@@ -25,6 +25,8 @@ add_executable(H3Recomp
     gpu/renderer/targets.cpp
     gpu/renderer/textures.cpp
     gpu/texture.cpp
+    gpu/texture_astc.cpp
+    gpu/texture_cache.cpp
     input/input.cpp
     input/touch.cpp
     debug/first_calls.cpp

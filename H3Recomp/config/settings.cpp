@@ -121,6 +121,8 @@ namespace h3::config
                     video.outputHeight = std::clamp(atoi(value.c_str()), 360, 1080);
                 else if (key == "touch_controls")
                     video.touchControls = ParseBool(value);
+                else if (key == "astc_block")
+                    video.astcBlock = atoi(value.c_str()) == 6 ? 6 : atoi(value.c_str()) == 4 ? 4 : 0;
             }
             else if (section == "profile")
             {
@@ -254,7 +256,8 @@ namespace h3::config
                 : video.antiAliasing == AntiAliasing::Fsr ? "fsr" : "fxaa")
             << "\n"
             << "output_height = " << video.outputHeight << "\n"
-            << "touch_controls = " << BoolText(video.touchControls) << "\n\n";
+            << "touch_controls = " << BoolText(video.touchControls) << "\n"
+            << "astc_block = " << video.astcBlock << "\n\n";
 
         const ProfileSettings& profile = settings.profile;
         out << "[profile]\n"

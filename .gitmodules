@@ -6,3 +6,8 @@
 	path = thirdparty/SDL3
 	url = https://github.com/libsdl-org/SDL.git
 	shallow = true
+
+[submodule "thirdparty/astc-encoder"]
+	path = thirdparty/astc-encoder
+	url = https://github.com/ARM-software/astc-encoder.git
+	shallow = true

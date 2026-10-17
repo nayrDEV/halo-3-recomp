@@ -76,6 +76,8 @@ set(H3_RUNTIME_SOURCES
     "${H3_ROOT}/H3Recomp/gpu/renderer/targets.cpp"
     "${H3_ROOT}/H3Recomp/gpu/renderer/textures.cpp"
     "${H3_ROOT}/H3Recomp/gpu/texture.cpp"
+    "${H3_ROOT}/H3Recomp/gpu/texture_astc.cpp"
+    "${H3_ROOT}/H3Recomp/gpu/texture_cache.cpp"
     "${H3_ROOT}/H3Recomp/input/input.cpp"
     "${H3_ROOT}/H3Recomp/input/touch.cpp"
     "${H3_ROOT}/H3Recomp/debug/first_calls.cpp"
@@ -130,6 +132,8 @@ target_include_directories(h3main PRIVATE
     "${H3_PPC_DIR}"
     "${H3_ROOT}/thirdparty/XenonRecomp/XenonUtils"
     "${H3_ROOT}/thirdparty/XenonRecomp/thirdparty/xxHash"
+    "${H3_ROOT}/thirdparty/bcdec"
+    "${H3_ROOT}/thirdparty/astc-encoder/Source"
     "${H3_ROOT}/H3Native"
     "${H3_SHADERC_DIR}/include"
     "${H3_FFMPEG_DIR}/include"
@@ -137,6 +141,10 @@ target_include_directories(h3main PRIVATE
 
 if (H3_HAVE_TAG_LAYOUTS)
     target_compile_definitions(h3main PRIVATE H3_HAVE_TAG_LAYOUTS=1)
+endif()
+
+if (ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_definitions(h3main PRIVATE H3_HAVE_ASTC=1)
 endif()
 
 # shaderc, built by tools/build_shaderc_android.sh.
@@ -171,3 +179,7 @@ target_link_libraries(h3main PRIVATE
     atomic
     m
 )
+
+if (ANDROID_ABI STREQUAL "arm64-v8a")
+    target_link_libraries(h3main PRIVATE astcenc-neon-static)
+endif()

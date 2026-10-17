@@ -404,6 +404,9 @@ namespace h3::gpu::renderer::internal
     // Post-processing (postprocess.cpp): FXAA on the finished frame if
     // enabled; replaces the frame with its output (RGBA8, at 0,0).
     void ApplyAntiAliasing(Frame& frame, SDL_GPUTextureFormat& format);
+    // Scales the finished frame to settings.ini's output_height; a no-op at
+    // native 720p. The window then scales it to the device surface.
+    void ApplyOutputResolution(Frame& frame, SDL_GPUTextureFormat& format);
     void ApplyGammaRamp(SDL_GPUTexture* source, int32_t sourceX, int32_t sourceY, SDL_GPUTexture* destination, uint32_t width,
         uint32_t height, const GammaRamp& ramp);
 

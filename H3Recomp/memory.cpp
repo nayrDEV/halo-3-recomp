@@ -13,6 +13,12 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <sys/syscall.h>
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+#endif
 #endif
 
 namespace h3
@@ -67,11 +73,23 @@ namespace h3
         void* memory = mmap(nullptr, kGuestMemorySize, PROT_READ | PROT_WRITE,
             MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (memory == MAP_FAILED)
+        {
+            // Some Android kernels/overcommit settings reject NORESERVE.
+            memory = mmap(nullptr, kGuestMemorySize, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        }
+        if (memory == MAP_FAILED)
             return false;
         g_base = static_cast<uint8_t*>(memory);
 
-        // Physical memory is a sparse memfd mapped at each view.
+        // Physical memory is a sparse memfd mapped at each view. Bionic only
+        // grew a memfd_create() wrapper recently, so use the syscall directly
+        // on Android (works on every 64-bit device we target).
+#ifdef __ANDROID__
+        g_physicalFd = int(syscall(SYS_memfd_create, "h3-physical", MFD_CLOEXEC));
+#else
         g_physicalFd = memfd_create("h3-physical", 0);
+#endif
         if (g_physicalFd < 0 || ftruncate(g_physicalFd, kPhysicalMemorySize) != 0)
             return false;
         if (!MapPhysicalView(kPhysicalMemoryBase, 0, kPhysicalMemorySize) ||

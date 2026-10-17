@@ -1,0 +1,36 @@
+diff --git a/XenonUtils/image.cpp b/XenonUtils/image.cpp
+index 39afe92..7fc0d0c 100644
+--- a/XenonUtils/image.cpp
++++ b/XenonUtils/image.cpp
+@@ -50,6 +50,7 @@ Image ElfLoadImage(const uint8_t* data, size_t size)
+ 
+     Image image{};
+     image.size = size;
++    image.dataSize = size;
+     image.data = std::make_unique<uint8_t[]>(size);
+     image.entry_point = ByteSwap(header->e_entry);
+     memcpy(image.data.get(), data, size);
+diff --git a/XenonUtils/image.h b/XenonUtils/image.h
+index be61119..5ae102c 100644
+--- a/XenonUtils/image.h
++++ b/XenonUtils/image.h
+@@ -8,6 +8,7 @@
+ struct Image
+ {
+     std::unique_ptr<uint8_t[]> data{};
++    size_t dataSize{};  // bytes actually allocated in data (may be < size)
+     size_t base{};
+     uint32_t size{};
+ 
+diff --git a/XenonUtils/xex.cpp b/XenonUtils/xex.cpp
+index 4e79042..87647c2 100644
+--- a/XenonUtils/xex.cpp
++++ b/XenonUtils/xex.cpp
+@@ -259,6 +259,7 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
+ 
+     image.data = std::move(result);
+     image.size = security->imageSize;
++    image.dataSize = imageSize;
+ 
+     // Map image
+     const auto* dosHeader = reinterpret_cast<IMAGE_DOS_HEADER*>(image.data.get());

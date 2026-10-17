@@ -18,6 +18,12 @@
 #include "kernel/vfs.h"
 #include "video/window.h"
 
+#include <SDL3/SDL.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_system.h>
+#endif
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -46,28 +52,51 @@ namespace
 // Usage: H3Recomp [path to default.xex]   (default: private/default.xex)
 int main(int argc, char* argv[])
 {
+#ifdef __ANDROID__
+    // SDLActivity owns the Android context. Initializing video here makes
+    // SDL_GetAndroidExternalStoragePath() usable before CreateMainWindow.
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);
+
+    const char* storage = SDL_GetAndroidExternalStoragePath();
+    if (!storage)
+        storage = SDL_GetAndroidInternalStoragePath();
+    std::filesystem::path root = std::filesystem::path(storage ? storage : ".") / "Halo3";
+    std::filesystem::path xexPath = root / "game" / "default.xex";
+    std::filesystem::path contentRoot = root / "game";
+    std::filesystem::path userRoot = root / "hdd";
+    std::filesystem::path settingsPath = root / h3::config::kFileName;
+    std::filesystem::path logPath = root / h3::config::kLogFileName;
+    std::filesystem::path shaderCache = root / "shadercache";
+    std::error_code error;
+    std::filesystem::create_directories(contentRoot, error);
+    std::filesystem::create_directories(userRoot, error);
+#else
     // Point this at default_patched.xex when recompiling with a title update.
-    const char* xexPath = argc > 1 ? argv[1] : "private/default.xex";
+    std::filesystem::path xexPath = argc > 1 ? argv[1] : "private/default.xex";
 
     // game:\ is the disc contents: private/game/ next to the XEX (see
     // private/README.md), or the XEX's own directory if it's in there. The
     // hard drive (cache partitions, saves) lives in hdd/ next to the XEX.
-    std::filesystem::path xexDir = std::filesystem::path(xexPath).parent_path();
-    h3::kernel::SetContentRoot(std::filesystem::is_directory(xexDir / "game") ? xexDir / "game" : xexDir);
-    std::filesystem::create_directories(xexDir / "hdd");
-    h3::kernel::SetUserDataRoot(xexDir / "hdd");
+    std::filesystem::path xexDir = xexPath.parent_path();
+    std::filesystem::path contentRoot = std::filesystem::is_directory(xexDir / "game") ? xexDir / "game" : xexDir;
+    std::filesystem::path userRoot = xexDir / "hdd";
+    std::filesystem::path settingsPath = xexDir / h3::config::kFileName;
+    std::filesystem::path logPath = xexDir / h3::config::kLogFileName;
+    std::filesystem::path shaderCache = xexDir / "shadercache";
+    std::filesystem::create_directories(userRoot);
+#endif
+    h3::kernel::SetContentRoot(contentRoot);
+    h3::kernel::SetUserDataRoot(userRoot);
 
     // The launcher's settings (window, render scale, profile, controls),
     // next to the XEX. Without the file everything is at its default.
     {
         h3::config::Settings settings;
-        std::filesystem::path settingsPath = xexDir / h3::config::kFileName;
         bool loaded = h3::config::Load(settingsPath, settings);
         // Debug options: the log file, then the H3_* switches (before
         // anything reads them; a variable set in the real environment wins).
         if (settings.debug.logToFile)
         {
-            std::filesystem::path logPath = xexDir / h3::config::kLogFileName;
             if (freopen(logPath.string().c_str(), "w", stdout))
             {
                 dup2(fileno(stdout), fileno(stderr));
@@ -88,12 +117,12 @@ int main(int argc, char* argv[])
     for (int i = 0; i < kCachePartitionCount; i++)
     {
         std::string cache = "Cache" + std::to_string(i);
-        std::filesystem::create_directories(xexDir / "hdd" / cache);
+        std::filesystem::create_directories(userRoot / cache);
         h3::kernel::AddSymbolicLink("cache" + std::to_string(i) + ":", "\\Device\\Harddisk0\\" + cache);
     }
 
     // Compiled host shaders, kept between runs.
-    h3::gpu::renderer::SetShaderCacheDirectory(xexDir / "shadercache");
+    h3::gpu::renderer::SetShaderCacheDirectory(shaderCache);
 
     if (!h3::InitGuestMemory())
     {
@@ -110,7 +139,7 @@ int main(int argc, char* argv[])
     h3::gpu::Initialize();
     h3::apu::InitXma();
 
-    if (!h3::kernel::LoadExecutable(xexPath))
+    if (!h3::kernel::LoadExecutable(xexPath.string().c_str()))
         return 1;
 
     // The guest's main thread runs beside the window's event loop, which SDL

@@ -305,7 +305,14 @@ namespace
     uint64_t ToFileTime(std::filesystem::file_time_type time)
     {
         constexpr uint64_t kUnixEpochAsFileTime = 116444736000000000ull;
+#if defined(__ANDROID__)
+        // Older libc++ (the NDK's) lacks C++20 clock_cast.
+        auto system = std::chrono::system_clock::now() +
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                time - std::filesystem::file_time_type::clock::now());
+#else
         auto system = std::chrono::clock_cast<std::chrono::system_clock>(time);
+#endif
         auto sinceEpoch = std::chrono::duration_cast<std::chrono::nanoseconds>(system.time_since_epoch()).count();
         return kUnixEpochAsFileTime + uint64_t(sinceEpoch / 100);
     }

@@ -5,6 +5,7 @@
 // take the larger deflection.
 
 #include "input/input.h"
+#include "input/touch.h"
 #include "config/env.h"
 #include "config/settings.h"
 
@@ -271,6 +272,11 @@ namespace h3::input
 
     void HandleEvent(const SDL_Event& event)
     {
+        // Fingers on the on-screen pad are ours; other event types fall
+        // through to the keyboard/mouse/gamepad handling below.
+        if (touch::HandleEvent(event))
+            return;
+
         switch (event.type)
         {
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -411,6 +417,15 @@ namespace h3::input
             state.thumbRX = Merge(state.thumbRX, SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_RIGHTX));
             state.thumbRY = Merge(state.thumbRY, invert(SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_RIGHTY)));
         }
+
+        touch::State touchState = touch::GetState();
+        state.buttons |= touchState.buttons;
+        state.leftTrigger = std::max(state.leftTrigger, touchState.leftTrigger);
+        state.rightTrigger = std::max(state.rightTrigger, touchState.rightTrigger);
+        state.thumbLX = Merge(state.thumbLX, touchState.leftX);
+        state.thumbLY = Merge(state.thumbLY, touchState.leftY);
+        state.thumbRX = Merge(state.thumbRX, touchState.rightX);
+        state.thumbRY = Merge(state.thumbRY, touchState.rightY);
 
         std::lock_guard lock(g_mutex);
         bool changed = state.buttons != g_state.buttons || state.leftTrigger != g_state.leftTrigger ||

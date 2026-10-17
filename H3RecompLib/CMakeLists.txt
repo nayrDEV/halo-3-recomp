@@ -8,7 +8,7 @@ set(H3_PPC_COMPILE_OPTIONS
     # Generated code is noisy; warnings here aren't actionable.
     -w
     # Report jump table indexes outside their table (debug/switch_check.h).
-    "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/debug/switch_check.h"
+    "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/debug/switch_check.h\""
 )
 
 file(GLOB H3_PPC_SOURCES CONFIGURE_DEPENDS
@@ -27,7 +27,7 @@ target_compile_options(H3RecompLib PRIVATE ${H3_PPC_COMPILE_OPTIONS})
 
 option(H3_TRACE_FIRST_CALLS "Write first_calls.txt: each executable function's first call and its frame (debugging)" OFF)
 if (H3_TRACE_FIRST_CALLS)
-    target_compile_options(H3RecompLib PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/debug/first_calls.h")
+    target_compile_options(H3RecompLib PRIVATE "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/debug/first_calls.h\"")
 endif()
 
 # --- DLLs the game loads with XexLoadImage ----------------------------------
@@ -69,9 +69,9 @@ foreach(config ${H3_MODULE_CONFIGS})
 
     file(GLOB sources CONFIGURE_DEPENDS ${dir}/ppc_recomp.*.cpp ${dir}/ppc_func_mapping.cpp)
     # SHELL: keeps CMake from de-duplicating the repeated -include flag.
-    set(options ${H3_PPC_COMPILE_OPTIONS} "SHELL:-include ${H3_PPC_DIR}/ppc_config.h")
+    set(options ${H3_PPC_COMPILE_OPTIONS} "SHELL:-include \"${H3_PPC_DIR}/ppc_config.h\"")
     if (H3_TRACE_MODULE_CALLS)
-        list(APPEND options "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/debug/trace_calls.h")
+        list(APPEND options "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/debug/trace_calls.h\"")
     endif()
     set(mappings PPCFuncMappings_${ident})
 

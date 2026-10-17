@@ -17,11 +17,16 @@
 #include "../memory.h"
 
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 
-#ifdef _WIN32
+#if defined(__ANDROID__) && defined(__aarch64__)
+// Bionic has no ucontext; hooks/fiber_arm64.S provides the switch.
+extern "C" void h3_fiber_swap(void** save_sp, void* new_sp);
+extern "C" void h3_fiber_entry();
+#elif defined(_WIN32)
 #include <windows.h>
 #else
 #include <ucontext.h>
@@ -56,7 +61,10 @@ namespace
         uint32_t guestFiber = 0;
         bool started = false;
         PPCContext startContext{};  // template for a fiber's first run
-#ifdef _WIN32
+#if defined(__ANDROID__) && defined(__aarch64__)
+        void* sp = nullptr;
+        std::unique_ptr<uint8_t[]> stack;
+#elif defined(_WIN32)
         void* handle = nullptr;
 #else
         ucontext_t context{};
@@ -90,7 +98,9 @@ namespace
     }
 
     // Where a new fiber's host stack starts: runs the guest fiber routine.
-#ifdef _WIN32
+#if defined(__ANDROID__) && defined(__aarch64__)
+    // Entered from fiber_arm64.S with x19 = HostFiber*.
+#elif defined(_WIN32)
     void WINAPI FiberEntry(void* parameter)
     {
         RunFiber(*static_cast<HostFiber*>(parameter));
@@ -118,7 +128,26 @@ namespace
         slot = std::make_unique<HostFiber>();
         slot->guestFiber = guestFiber;
         slot->started = current;
-#ifdef _WIN32
+#if defined(__ANDROID__) && defined(__aarch64__)
+        if (!current)
+        {
+            slot->stack = std::make_unique_for_overwrite<uint8_t[]>(kHostStackSize);
+            // The assembly frame is 176 bytes; see fiber_arm64.S.
+            constexpr size_t kFrameSize = 176;
+            uintptr_t top = (reinterpret_cast<uintptr_t>(slot->stack.get()) + kHostStackSize) & ~uintptr_t(15);
+            uint8_t* frame = reinterpret_cast<uint8_t*>(top - kFrameSize);
+            memset(frame, 0, kFrameSize);
+            *reinterpret_cast<uint64_t*>(frame + 0) = reinterpret_cast<uint64_t>(slot.get());   // x19
+            *reinterpret_cast<uint64_t*>(frame + 88) = reinterpret_cast<uint64_t>(&h3_fiber_entry); // x30
+            uint64_t fpcr;
+            __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+            *reinterpret_cast<uint64_t*>(frame + 160) = fpcr;
+            uint64_t x18;
+            __asm__ __volatile__("mov %0, x18" : "=r"(x18));
+            *reinterpret_cast<uint64_t*>(frame + 168) = x18;
+            slot->sp = frame;
+        }
+#elif defined(_WIN32)
         if (current)
         {
             thread_local bool converted = false;
@@ -148,6 +177,13 @@ namespace
     }
 }
 
+#if defined(__ANDROID__) && defined(__aarch64__)
+extern "C" void H3FiberEntryC(void* fiber)
+{
+    RunFiber(*static_cast<HostFiber*>(fiber));
+}
+#endif
+
 // void SwitchToFiber(FIBER* fiber)
 PPC_FUNC(sub_8259FE40)
 {
@@ -174,7 +210,9 @@ PPC_FUNC(sub_8259FE40)
         to.startContext = ctx;
     }
 
-#ifdef _WIN32
+#if defined(__ANDROID__) && defined(__aarch64__)
+    h3_fiber_swap(&from.sp, to.sp);
+#elif defined(_WIN32)
     SwitchToFiber(to.handle);
 #else
     t_startingFiber = &to;

@@ -90,9 +90,11 @@ namespace h3::config
     // target is 25 MB at 1x, 225 MB at 3x) and Halo keeps a dozen or more.
     constexpr int kMaxRenderScale = 3;   // 3x = 3840x2160 for a 720p game
     constexpr size_t kMaxGamertag = 15;  // the 360's limit (XUSER_NAME_SIZE - 1)
-    // Game tick rates (frame_rate): the original 30, or 60 (experimental;
-    // hooks/tick_rate.cpp). Halo 3 renders one frame per game tick.
+    // Game tick rates (frame_rate): the original 30, the Android menu's
+    // 50, or 60 (experimental; hooks/tick_rate.cpp). Halo 3 renders one
+    // frame per game tick.
     constexpr int kOriginalTickRate = 30;
+    constexpr int kPalTickRate = 50;
     constexpr int kUnlockedTickRate = 60;
 
     // Post-process anti-aliasing on the finished frame (Halo 3 renders
@@ -101,6 +103,8 @@ namespace h3::config
     {
         Off,
         Fxaa,
+        Smaa,
+        Fsr,
     };
 
     struct VideoSettings
@@ -119,12 +123,19 @@ namespace h3::config
         // Compile new shaders and pipelines on background threads and skip
         // what needs them meanwhile: no stutter, brief pop-in.
         bool asyncShaders = false;
-        // Game ticks (and so frames) per second: kOriginalTickRate or
-        // kUnlockedTickRate. 60 runs the whole simulation at 60 Hz, which
-        // the engine supports (it reads the rate everywhere) but Halo 3
-        // shipped at 30, so some content may misbehave.
+        // Game ticks (and so frames) per second: kOriginalTickRate,
+        // kPalTickRate or kUnlockedTickRate. 60 runs the whole simulation
+        // at 60 Hz, which the engine supports (it reads the rate everywhere)
+        // but Halo 3 shipped at 30, so some content may misbehave.
         int frameRate = kOriginalTickRate;
         AntiAliasing antiAliasing = AntiAliasing::Fxaa;
+        // The Android menu's output target (360/480/720/1080). The game's
+        // internal render targets stay at their native size for now; the
+        // presentation layer scales the finished frame to this height.
+        int outputHeight = 720;
+        // Draw the on-screen Xbox 360 pad overlay and merge its touches
+        // with a real gamepad / keyboard.
+        bool touchControls = true;
     };
 
     struct ProfileSettings

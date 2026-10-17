@@ -1,0 +1,425 @@
+import { CheckBox, ScrollView } from "std-widgets.slint";
+
+component MenuButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 36px;
+    border-radius: 8px;
+    background: !root.enabled ? #161C18 : root.primary ? (touch.pressed ? #A9DA5B : #8DCB3E) : (touch.pressed ? #2A352C : #1B241E);
+    border-width: 1px;
+    border-color: !root.enabled ? #242C26 : root.primary ? #B9E970 : #35463A;
+    opacity: root.enabled ? 1.0 : 0.45;
+
+    Text {
+        text: root.label;
+        color: root.primary ? #0A0E0B : #E7F0E3;
+        font-size: 12px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SegmentButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    height: 28px;
+    border-radius: 6px;
+    background: root.selected ? #8DCB3E : (touch.pressed ? #2A352C : #171F1A);
+    border-width: 1px;
+    border-color: root.selected ? #B9E970 : #2C3A30;
+
+    Text {
+        text: root.label;
+        color: root.selected ? #0A0E0B : #C8D6C2;
+        font-size: 10px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component Card inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle: "";
+    background: #111713E6;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: #26332A;
+    vertical-stretch: 0;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+        Text {
+            text: root.title;
+            color: #EAF4E5;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        Text {
+            text: root.subtitle;
+            color: #8FA592;
+            font-size: 9px;
+            wrap: word-wrap;
+            visible: root.subtitle != "";
+        }
+        @children
+    }
+}
+
+component SettingLine inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint: "";
+    height: 20px;
+    spacing: 8px;
+
+    Text {
+        text: root.label;
+        color: #D6E3D1;
+        font-size: 10px;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.hint;
+        color: #8FA592;
+        font-size: 9px;
+        vertical-alignment: center;
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Halo 3 Recompiled";
+    background: #070A08;
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    min-width: 640px;
+    min-height: 360px;
+
+    in-out property <bool> game-ready: false;
+    in-out property <string> game-path: "No game files imported";
+    in-out property <string> status: "Import your own Halo 3 Xbox 360 ISO or game folder.";
+    in-out property <int> frame-rate-index: 1;
+    in-out property <int> resolution-index: 2;
+    in-out property <int> aa-index: 1;
+    in-out property <bool> touch-controls: true;
+    in-out property <bool> importing: false;
+    in-out property <string> version: "0.1.0 // arm64";
+
+    callback import-iso();
+    callback import-folder();
+    callback play();
+    callback open-settings-folder();
+
+    // Full-window backdrop. The ring is decorative and always centered in
+    // the right half, independent of the scrollable content.
+    Rectangle {
+        x: 0; y: 0;
+        width: 100%; height: 100%;
+        background: @radial-gradient(circle, #1C3524 0%, #0B120D 46%, #050706 100%);
+
+        Rectangle {
+            x: parent.width - 360px;
+            y: (parent.height - 360px) / 2;
+            width: 360px; height: 360px;
+            transform-rotation: -18deg;
+            border-radius: 999px;
+            border-width: 2px;
+            border-color: #5F8E4A33;
+        }
+        Rectangle {
+            x: parent.width - 440px;
+            y: (parent.height - 440px) / 2;
+            width: 440px; height: 440px;
+            border-radius: 999px;
+            border-width: 1px;
+            border-color: #8DCB3E1A;
+        }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+
+        // Header
+        HorizontalLayout {
+            height: 56px;
+            spacing: 12px;
+            alignment: center;
+
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+
+                Text {
+                    text: "HALO 3";
+                    color: #F2F8EE;
+                    font-size: 30px;
+                    font-weight: 900;
+                    letter-spacing: 4px;
+                }
+                Text {
+                    text: "RECOMPILED  //  XBOX 360  //  ARM64";
+                    color: #8DCB3E;
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                }
+            }
+
+            VerticalLayout {
+                alignment: end;
+                spacing: 2px;
+                Text {
+                    text: root.version;
+                    color: #6F8372;
+                    font-size: 9px;
+                    horizontal-alignment: right;
+                }
+                Text {
+                    text: root.game-ready ? "GAME DETECTED" : "NO GAME DATA";
+                    color: root.game-ready ? #8DCB3E : #D9A441;
+                    font-size: 10px;
+                    font-weight: 800;
+                    horizontal-alignment: right;
+                    letter-spacing: 1px;
+                }
+            }
+
+            MenuButton {
+                label: "PLAY";
+                primary: true;
+                width: 120px;
+                height: 34px;
+                enabled: root.game-ready && !root.importing;
+                clicked => { root.play(); }
+            }
+        }
+
+        // Body. On short screens this scrolls; the footer stays visible.
+        ScrollView {
+            vertical-stretch: 1;
+
+            HorizontalLayout {
+                height: 370px;
+                spacing: 8px;
+
+                // Left: game files
+                VerticalLayout {
+                    spacing: 8px;
+                    horizontal-stretch: 1;
+                    width: 48%;
+
+                    Card {
+                        height: 214px;
+                        title: "GAME FILES";
+                        subtitle: "Use your own legally dumped copy. Nothing is downloaded.";
+
+                        VerticalLayout {
+                            spacing: 6px;
+
+                            Rectangle {
+                                height: 42px;
+                                border-radius: 8px;
+                                background: #0A0F0B;
+                                border-width: 1px;
+                                border-color: #223026;
+
+                                VerticalLayout {
+                                    padding: 7px;
+                                    spacing: 2px;
+                                    Text {
+                                        text: "INSTALL LOCATION";
+                                        color: #6F8372;
+                                        font-size: 8px;
+                                        font-weight: 700;
+                                        letter-spacing: 1px;
+                                    }
+                                    Text {
+                                        text: root.game-path;
+                                        color: #C9D8C3;
+                                        font-size: 9px;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                MenuButton {
+                                    label: root.importing ? "IMPORTING..." : "IMPORT ISO";
+                                    enabled: !root.importing;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.import-iso(); }
+                                }
+                                MenuButton {
+                                    label: "IMPORT FOLDER";
+                                    enabled: !root.importing;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.import-folder(); }
+                                }
+                            }
+
+                            Text {
+                                text: root.status;
+                                color: #9FB29C;
+                                font-size: 9px;
+                                wrap: word-wrap;
+                                min-height: 22px;
+                            }
+                        }
+                    }
+
+                    Card {
+                        height: 92px;
+                        title: "PROFILE";
+                        subtitle: "Halo 3 saves and controller settings live in the app's data folder.";
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            MenuButton {
+                                label: "OPEN SAVE FOLDER";
+                                horizontal-stretch: 1;
+                                clicked => { root.open-settings-folder(); }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: transparent;
+                    }
+                }
+
+                // Right: video / controls
+                VerticalLayout {
+                    spacing: 8px;
+                    horizontal-stretch: 1;
+                    width: 52%;
+
+                    Card {
+                        height: 250px;
+                        title: "VIDEO";
+                        subtitle: "Changes are written when you press Play.";
+
+                        VerticalLayout {
+                            spacing: 5px;
+
+                            SettingLine {
+                                label: "FRAME RATE";
+                                hint: "ticks per second";
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                SegmentButton {
+                                    label: "50 Hz";
+                                    selected: root.frame-rate-index == 0;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.frame-rate-index = 0; }
+                                }
+                                SegmentButton {
+                                    label: "60 Hz";
+                                    selected: root.frame-rate-index == 1;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.frame-rate-index = 1; }
+                                }
+                            }
+
+                            SettingLine {
+                                label: "RESOLUTION";
+                                hint: "output target";
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                for label[i] in ["360p", "480p", "720p", "1080p"] : SegmentButton {
+                                    label: label;
+                                    selected: root.resolution-index == i;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.resolution-index = i; }
+                                }
+                            }
+
+                            SettingLine {
+                                label: "ANTI-ALIASING";
+                                hint: "post-process";
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                for label[i] in ["OFF", "FXAA", "SMAA", "FSR"] : SegmentButton {
+                                    label: label;
+                                    selected: root.aa-index == i;
+                                    horizontal-stretch: 1;
+                                    clicked => { root.aa-index = i; }
+                                }
+                            }
+                        }
+                    }
+
+                    Card {
+                        height: 112px;
+                        title: "CONTROLS";
+                        subtitle: "Xbox 360 layout on screen; Bluetooth and USB gamepads also work.";
+
+                        VerticalLayout {
+                            spacing: 5px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "ON-SCREEN CONTROLS";
+                                    color: #D6E3D1;
+                                    font-size: 10px;
+                                    horizontal-stretch: 1;
+                                }
+                                CheckBox {
+                                    checked: root.touch-controls;
+                                    toggled => { root.touch-controls = self.checked; }
+                                }
+                            }
+                            Text {
+                                text: "Left stick moves, right stick looks. Buttons mirror the Xbox 360 pad.";
+                                color: #7F947F;
+                                font-size: 9px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: transparent;
+                    }
+                }
+            }
+        }
+
+        // Footer / play
+        HorizontalLayout {
+            spacing: 8px;
+            height: 36px;
+            alignment: center;
+
+            Text {
+                text: "You must own Halo 3 for Xbox 360. This app contains no game data.";
+                color: #5F7361;
+                font-size: 8px;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

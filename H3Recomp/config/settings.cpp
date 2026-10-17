@@ -101,9 +101,26 @@ namespace h3::config
                 else if (key == "async_shaders")
                     video.asyncShaders = ParseBool(value);
                 else if (key == "frame_rate")
-                    video.frameRate = atoi(value.c_str()) >= kUnlockedTickRate ? kUnlockedTickRate : kOriginalTickRate;
+                {
+                    int rate = atoi(value.c_str());
+                    video.frameRate = rate == kPalTickRate ? kPalTickRate
+                        : rate >= kUnlockedTickRate ? kUnlockedTickRate : kOriginalTickRate;
+                }
                 else if (key == "anti_aliasing")
-                    video.antiAliasing = value == "off" ? AntiAliasing::Off : AntiAliasing::Fxaa;
+                {
+                    if (value == "off")
+                        video.antiAliasing = AntiAliasing::Off;
+                    else if (value == "smaa")
+                        video.antiAliasing = AntiAliasing::Smaa;
+                    else if (value == "fsr")
+                        video.antiAliasing = AntiAliasing::Fsr;
+                    else
+                        video.antiAliasing = AntiAliasing::Fxaa;
+                }
+                else if (key == "output_height")
+                    video.outputHeight = std::clamp(atoi(value.c_str()), 360, 1080);
+                else if (key == "touch_controls")
+                    video.touchControls = ParseBool(value);
             }
             else if (section == "profile")
             {
@@ -231,7 +248,13 @@ namespace h3::config
             << "precompile_shaders = " << BoolText(video.precompileShaders) << "\n"
             << "async_shaders = " << BoolText(video.asyncShaders) << "\n"
             << "frame_rate = " << video.frameRate << "\n"
-            << "anti_aliasing = " << (video.antiAliasing == AntiAliasing::Off ? "off" : "fxaa") << "\n\n";
+            << "anti_aliasing = "
+            << (video.antiAliasing == AntiAliasing::Off ? "off"
+                : video.antiAliasing == AntiAliasing::Smaa ? "smaa"
+                : video.antiAliasing == AntiAliasing::Fsr ? "fsr" : "fxaa")
+            << "\n"
+            << "output_height = " << video.outputHeight << "\n"
+            << "touch_controls = " << BoolText(video.touchControls) << "\n\n";
 
         const ProfileSettings& profile = settings.profile;
         out << "[profile]\n"

@@ -295,6 +295,7 @@ namespace h3::gpu::renderer
             GpuTimedScope timed{ "display" };  // H3_GPU_TIMING
             ApplyDisplayGamma(frame, frameFormat);
             ApplyAntiAliasing(frame, frameFormat);
+            ApplyOutputResolution(frame, frameFormat);
         }
 
         g_swaps++;

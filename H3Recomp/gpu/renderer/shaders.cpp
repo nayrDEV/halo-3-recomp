@@ -126,15 +126,22 @@ namespace h3::gpu::renderer::internal
         return spirv;
     }
 
+#if defined(__x86_64__) || defined(_M_X64)
     // content_hash_avx2.cpp (compiled for AVX2).
     uint64_t ContentHashAvx2(const void* data, size_t size);
+#endif
 
     uint64_t ContentHash(const void* data, size_t size)
     {
+#if defined(__x86_64__) || defined(_M_X64)
         // Both variants compute the same XXH3 value; the AVX2 one is
         // roughly twice as fast on large data.
         static const bool avx2 = __builtin_cpu_supports("avx2");
         return avx2 ? ContentHashAvx2(data, size) : XXH3_64bits(data, size);
+#else
+        // ARM64: xxHash's portable/NEON path is already the fast one.
+        return XXH3_64bits(data, size);
+#endif
     }
 
     void LogOnce(const std::string& message)

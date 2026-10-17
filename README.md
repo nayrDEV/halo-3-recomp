@@ -69,6 +69,16 @@ Precompile shaders) so areas you've already played don't stutter.
 Delete `private/hdd/` to start from a clean console (this also clears the
 saved profile settings, `private/hdd/profile_settings.bin`).
 
+### Android (arm64)
+
+An experimental Android arm64 port lives in `android/`: a Slint launcher for
+importing an ISO or game folder, video/control settings, and an SDL3 game
+activity with an on-screen Xbox 360 pad. The game code is still generated
+from your own `default.xex` on the build machine and compiled into the APK;
+the phone imports the disc data. See [docs/ANDROID.md](docs/ANDROID.md) for
+the NDK/SDK setup, the shaderc and FFmpeg cross-builds, and the current
+limitations.
+
 ### Launcher
 
 `build/release/H3Launcher/H3Launcher` edits the settings and starts the game.

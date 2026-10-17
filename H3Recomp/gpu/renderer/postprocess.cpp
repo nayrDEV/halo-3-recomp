@@ -15,6 +15,7 @@
 
 #include "config/settings.h"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 
@@ -152,13 +153,16 @@ void main()
 )";
         SDL_GPUGraphicsPipeline* g_fxaaPipeline = nullptr;
 
-        // Whether to run FXAA: settings.ini, H3_AA overrides.
+        // Whether to run the post-process AA: settings.ini, H3_AA overrides.
+        // SMAA and FSR are selectable in the Android menu; until their
+        // dedicated shaders land, both use this FXAA pass (the output
+        // scaler still runs for FSR/resolution).
         bool FxaaEnabled()
         {
             static const bool enabled = [] {
                 if (const char* override = EnvString("H3_AA"))
                     return std::string(override) != "off";
-                return config::Active().video.antiAliasing == config::AntiAliasing::Fxaa;
+                return config::Active().video.antiAliasing != config::AntiAliasing::Off;
             }();
             return enabled;
         }
@@ -242,6 +246,66 @@ void main()
         frame.texture = target;
         frame.textureWidth = frame.width;
         frame.textureHeight = frame.height;
+        frame.x = frame.y = 0;
+        format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    }
+}
+
+namespace h3::gpu::renderer::internal
+{
+    void ApplyOutputResolution(Frame& frame, SDL_GPUTextureFormat& format)
+    {
+        if (!frame.texture || frame.width == 0 || frame.height == 0)
+            return;
+
+        int targetHeight = config::Active().video.outputHeight;
+        if (targetHeight <= 0)
+            targetHeight = 720;
+        targetHeight = std::clamp(targetHeight, 360, 1080);
+        uint32_t targetWidth = uint32_t((uint64_t(frame.width) * targetHeight + frame.height / 2) / frame.height);
+        targetWidth = std::max(targetWidth, 1u);
+        if (targetWidth == frame.width && uint32_t(targetHeight) == frame.height)
+            return;
+
+        static std::unordered_map<uint64_t, SDL_GPUTexture*> targets;
+        uint64_t key = (uint64_t(targetWidth) << 32) | uint32_t(targetHeight);
+        SDL_GPUTexture*& target = targets[key];
+        if (!target)
+        {
+            SDL_GPUTextureCreateInfo info{};
+            info.type = SDL_GPU_TEXTURETYPE_2D;
+            info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+            info.width = targetWidth;
+            info.height = uint32_t(targetHeight);
+            info.layer_count_or_depth = 1;
+            info.num_levels = 1;
+            target = SDL_CreateGPUTexture(g_device, &info);
+            if (!target)
+            {
+                LogOnce(std::string("output-resolution texture creation failed: ") + SDL_GetError());
+                return;
+            }
+        }
+
+        SDL_GPUBlitInfo blit{};
+        blit.source.texture = frame.texture;
+        blit.source.x = uint32_t(frame.x);
+        blit.source.y = uint32_t(frame.y);
+        blit.source.w = frame.width;
+        blit.source.h = frame.height;
+        blit.destination.texture = target;
+        blit.destination.w = targetWidth;
+        blit.destination.h = uint32_t(targetHeight);
+        blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        blit.filter = SDL_GPU_FILTER_LINEAR;
+        SDL_BlitGPUTexture(Commands(), &blit);
+
+        frame.texture = target;
+        frame.textureWidth = targetWidth;
+        frame.textureHeight = uint32_t(targetHeight);
+        frame.width = targetWidth;
+        frame.height = uint32_t(targetHeight);
         frame.x = frame.y = 0;
         format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     }

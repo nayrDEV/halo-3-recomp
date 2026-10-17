@@ -13,7 +13,6 @@ add_executable(H3Recomp
     gpu/command_processor.cpp
     gpu/frame_capture.cpp
     gpu/renderer.cpp
-    gpu/renderer/content_hash_avx2.cpp
     gpu/renderer/copy.cpp
     gpu/renderer/debug.cpp
     gpu/renderer/draw.cpp
@@ -27,6 +26,7 @@ add_executable(H3Recomp
     gpu/renderer/textures.cpp
     gpu/texture.cpp
     input/input.cpp
+    input/touch.cpp
     debug/first_calls.cpp
     debug/profiler.cpp
     debug/state_hash.cpp
@@ -78,8 +78,11 @@ target_include_directories(H3Recomp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # xxHash (header only, vendored by XenonRecomp): fast hashing of texture memory.
 target_include_directories(H3Recomp PRIVATE ${PROJECT_SOURCE_DIR}/thirdparty/XenonRecomp/thirdparty/xxHash)
 # XXH3's AVX2 build, picked at runtime (ContentHash) so the executable
-# still runs on CPUs without AVX2.
-set_source_files_properties(gpu/renderer/content_hash_avx2.cpp PROPERTIES COMPILE_OPTIONS -mavx2)
+# still runs on CPUs without AVX2. ARM64 uses XXH3's NEON/scalar path.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    target_sources(H3Recomp PRIVATE gpu/renderer/content_hash_avx2.cpp)
+    set_source_files_properties(gpu/renderer/content_hash_avx2.cpp PROPERTIES COMPILE_OPTIONS -mavx2)
+endif()
 
 find_package(SDL3 REQUIRED CONFIG)
 find_package(PkgConfig REQUIRED)

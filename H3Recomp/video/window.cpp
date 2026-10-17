@@ -10,6 +10,7 @@
 #include "gpu/frame_capture.h"
 #include "gpu/renderer.h"
 #include "input/input.h"
+#include "input/touch.h"
 
 #include <SDL3/SDL.h>
 
@@ -183,8 +184,14 @@ namespace h3::video
         // Size and mode from settings.ini ([video]). Fullscreen is
         // borderless at the desktop resolution (no mode switch).
         const config::VideoSettings& video = config::Active().video;
+#ifdef __ANDROID__
+        // The Android surface is always the device display; settings.ini's
+        // width/height describe the desktop window only.
+        g_window = SDL_CreateWindow("Halo 3 Recomp", 0, 0, SDL_WINDOW_FULLSCREEN);
+#else
         SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (video.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
         g_window = SDL_CreateWindow("Halo 3 Recomp", video.width, video.height, flags);
+#endif
         if (!g_window)
         {
             fprintf(stderr, "[video] SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -282,6 +289,12 @@ namespace h3::video
             SDL_RenderClear(g_renderer);
             if (!DrawGameFrame())
                 DrawBinkFrame();
+            if (input::touch::Enabled() && input::touch::HasTouchDevice())
+            {
+                int outputWidth = 0, outputHeight = 0;
+                SDL_GetCurrentRenderOutputSize(g_renderer, &outputWidth, &outputHeight);
+                input::touch::Draw(g_renderer, float(outputWidth), float(outputHeight));
+            }
             SDL_RenderPresent(g_renderer);
         }
     }

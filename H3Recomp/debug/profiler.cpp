@@ -11,6 +11,9 @@
 // blocked (in the GPU driver, on locks) shows up as samples in the blocking
 // call.
 
+#include <cstdint>
+
+#if !defined(__ANDROID__)
 #include <algorithm>
 #include "config/env.h"
 #include <atomic>
@@ -175,3 +178,11 @@ namespace h3::debug
         }
     }
 }
+
+#else
+namespace h3::debug
+{
+    void UpdateProfiler(uint32_t) {}
+    void SetWallProfileThread() {}
+}
+#endif

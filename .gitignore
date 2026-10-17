@@ -34,3 +34,10 @@ Thumbs.db
 
 __pycache__/
 captures/
+
+# Android build / local SDK path
+android/.gradle/
+android/local.properties
+android/build/
+android/app/.cxx/
+android/app/build/

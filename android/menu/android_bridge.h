@@ -15,10 +15,12 @@ namespace h3::android
     void StartGame();
     void ExportSaves();
     void ImportSaves();
+    void ExportLog();
 
     // Called by the Java activity / extractor when work finishes.
     void OnImportFinished(const std::string& path, const std::string& error);
     void OnExtractFinished(const std::string& path, const std::string& error);
     void OnSavesExported(const std::string& path, const std::string& error);
     void OnSavesImported(const std::string& path, const std::string& error);
+    void OnLogExported(const std::string& path, const std::string& error);
 }

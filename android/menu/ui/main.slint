@@ -118,6 +118,7 @@ export component MainWindow inherits Window {
     in-out property <int> resolution-index: 2;
     in-out property <int> aa-index: 1;
     in-out property <bool> touch-controls: true;
+    in-out property <bool> log-to-file: true;
     in-out property <int> texture-cache-index: 0;
     in-out property <bool> importing: false;
     in-out property <string> version: "0.1.0 // arm64";
@@ -128,6 +129,7 @@ export component MainWindow inherits Window {
     callback open-settings-folder();
     callback export-saves();
     callback import-saves();
+    callback export-log();
 
     // Full-window backdrop. The ring is decorative and always centered in
     // the right half, independent of the scrollable content.
@@ -219,7 +221,7 @@ export component MainWindow inherits Window {
             vertical-stretch: 1;
 
             HorizontalLayout {
-                height: 486px;
+                height: 500px;
                 spacing: 8px;
 
                 // Left: game files
@@ -289,26 +291,48 @@ export component MainWindow inherits Window {
                     }
 
                     Card {
-                        height: 92px;
+                        height: 140px;
                         title: "PROFILE";
-                        subtitle: "Halo 3 saves and controller settings live in the app's data folder.";
+                        subtitle: "Saves live in app storage. Export logs here if the game stays black.";
 
-                        HorizontalLayout {
+                        VerticalLayout {
                             spacing: 6px;
-                            MenuButton {
-                                label: "SAVE FOLDER";
-                                horizontal-stretch: 1;
-                                clicked => { root.open-settings-folder(); }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                MenuButton {
+                                    label: "SAVE FOLDER";
+                                    horizontal-stretch: 1;
+                                    clicked => { root.open-settings-folder(); }
+                                }
+                                MenuButton {
+                                    label: "EXPORT";
+                                    horizontal-stretch: 1;
+                                    clicked => { root.export-saves(); }
+                                }
+                                MenuButton {
+                                    label: "IMPORT";
+                                    horizontal-stretch: 1;
+                                    clicked => { root.import-saves(); }
+                                }
                             }
-                            MenuButton {
-                                label: "EXPORT";
-                                horizontal-stretch: 1;
-                                clicked => { root.export-saves(); }
-                            }
-                            MenuButton {
-                                label: "IMPORT";
-                                horizontal-stretch: 1;
-                                clicked => { root.import-saves(); }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Text {
+                                    text: "WRITE LOG TO FILE";
+                                    color: #D6E3D1;
+                                    font-size: 10px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                CheckBox {
+                                    checked: root.log-to-file;
+                                    toggled => { root.log-to-file = self.checked; }
+                                }
+                                MenuButton {
+                                    label: "EXPORT LOG";
+                                    width: 160px;
+                                    clicked => { root.export-log(); }
+                                }
                             }
                         }
                     }

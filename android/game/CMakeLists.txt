@@ -11,6 +11,8 @@ endif()
 if (NOT H3_HAVE_GAME OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
     add_library(h3main SHARED game_stub.cpp)
     set_target_properties(h3main PROPERTIES OUTPUT_NAME main)
+# Several modules recompile their own copies of the CRT save/restore helpers.
+target_link_options(h3main PRIVATE "-Wl,--allow-multiple-definition")
     target_link_libraries(h3main PRIVATE SDL3::SDL3-static)
     if (NOT H3_HAVE_GAME)
         message(STATUS "Android game: no H3RecompLib/ppc; building the SDL stub")
@@ -126,6 +128,8 @@ list(APPEND H3_RUNTIME_SOURCES "${H3_ROOT}/H3Recomp/hooks/fiber_arm64.S")
 
 add_library(h3main SHARED ${H3_RUNTIME_SOURCES})
 set_target_properties(h3main PROPERTIES OUTPUT_NAME main)
+# Several modules recompile their own copies of the CRT save/restore helpers.
+target_link_options(h3main PRIVATE "-Wl,--allow-multiple-definition")
 
 target_include_directories(h3main PRIVATE
     "${H3_ROOT}/H3Recomp"
@@ -169,6 +173,8 @@ target_link_libraries(h3main PRIVATE
     H3NativeCache
     H3NativeTags
     XenonUtils
+    ${H3_MODULES}
+    ${H3_MODULE_STUBS}
     SDL3::SDL3-static
     shaderc_android
     avcodec_android

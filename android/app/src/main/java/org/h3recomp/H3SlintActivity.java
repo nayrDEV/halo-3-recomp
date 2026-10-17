@@ -31,6 +31,7 @@ public class H3SlintActivity extends NativeActivity {
     private static final int REQUEST_ISO = 1002;
     private static final int REQUEST_EXPORT_SAVES = 1003;
     private static final int REQUEST_IMPORT_SAVES = 1004;
+    private static final int REQUEST_EXPORT_LOG = 1005;
 
     static {
         System.loadLibrary("slintmenu");
@@ -44,6 +45,7 @@ public class H3SlintActivity extends NativeActivity {
     private static native void nativeExtractIso(String isoPath);
     private static native void nativeSavesExported(String path, String error);
     private static native void nativeSavesImported(String path, String error);
+    private static native void nativeLogExported(String path, String error);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -106,6 +108,16 @@ public class H3SlintActivity extends NativeActivity {
         });
     }
 
+    public void exportLog() {
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_TITLE, "Halo3Recomp-log.txt");
+            startActivityForResult(intent, REQUEST_EXPORT_LOG);
+        });
+    }
+
     public void importSaves() {
         runOnUiThread(() -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -125,6 +137,8 @@ public class H3SlintActivity extends NativeActivity {
                 nativeSavesExported("", "Export cancelled.");
             } else if (requestCode == REQUEST_IMPORT_SAVES) {
                 nativeSavesImported("", "Import cancelled.");
+            } else if (requestCode == REQUEST_EXPORT_LOG) {
+                nativeLogExported("", "Log export cancelled.");
             } else {
                 nativeImportFinished("", "Import cancelled.");
             }
@@ -142,12 +156,16 @@ public class H3SlintActivity extends NativeActivity {
                     exportSaves(uri);
                 } else if (requestCode == REQUEST_IMPORT_SAVES) {
                     importSaves(uri);
+                } else if (requestCode == REQUEST_EXPORT_LOG) {
+                    exportLog(uri);
                 }
             } catch (Exception e) {
                 if (requestCode == REQUEST_EXPORT_SAVES) {
                     nativeSavesExported("", "Save export failed: " + e.getMessage());
                 } else if (requestCode == REQUEST_IMPORT_SAVES) {
                     nativeSavesImported("", "Save import failed: " + e.getMessage());
+                } else if (requestCode == REQUEST_EXPORT_LOG) {
+                    nativeLogExported("", "Log export failed: " + e.getMessage());
                 } else {
                     nativeImportFinished("", "Import failed: " + e.getMessage());
                 }
@@ -200,6 +218,57 @@ public class H3SlintActivity extends NativeActivity {
             }
         }
         nativeExtractIso(iso.getAbsolutePath());
+    }
+
+    private void exportLog(Uri destination) throws Exception {
+        StringBuilder text = new StringBuilder();
+        text.append("Halo 3 Recompiled Android log\n");
+        text.append("Device: ").append(android.os.Build.MANUFACTURER).append(" ")
+            .append(android.os.Build.MODEL).append("\n");
+        text.append("Android: ").append(android.os.Build.VERSION.RELEASE)
+            .append(" / API ").append(android.os.Build.VERSION.SDK_INT).append("\n");
+        text.append("ABIs: ").append(String.join(", ", android.os.Build.SUPPORTED_ABIS)).append("\n\n");
+
+        File log = new File(gameRoot, "h3recomp.log");
+        if (log.isFile()) {
+            try (InputStream in = new BufferedInputStream(new FileInputStream(log))) {
+                appendLimited(text, in, 4 * 1024 * 1024);
+            }
+        } else {
+            text.append("No h3recomp.log was written. Is 'WRITE LOG TO FILE' enabled before Play?\n");
+        }
+
+        text.append("\n\n--- logcat (last 3000 lines) ---\n");
+        try {
+            Process process = new ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "3000")
+                .redirectErrorStream(true).start();
+            try (InputStream in = new BufferedInputStream(process.getInputStream())) {
+                appendLimited(text, in, 4 * 1024 * 1024);
+            }
+            process.waitFor();
+        } catch (Exception e) {
+            text.append("logcat unavailable: ").append(e).append("\n");
+        }
+
+        try (OutputStream out = getContentResolver().openOutputStream(destination)) {
+            if (out == null) {
+                nativeLogExported("", "Can't open the selected log file.");
+                return;
+            }
+            out.write(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        nativeLogExported("", "");
+    }
+
+    private void appendLimited(StringBuilder text, InputStream in, int limit) throws Exception {
+        byte[] buffer = new byte[65536];
+        int total = 0;
+        int count;
+        while (total < limit && (count = in.read(buffer)) > 0) {
+            int keep = Math.min(count, limit - total);
+            text.append(new String(buffer, 0, keep, java.nio.charset.StandardCharsets.UTF_8));
+            total += keep;
+        }
     }
 
     private void exportSaves(Uri destination) throws Exception {

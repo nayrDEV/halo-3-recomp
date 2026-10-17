@@ -135,6 +135,18 @@ extern "C" JNIEXPORT void JNICALL Java_org_h3recomp_H3SlintActivity_nativeSavesI
     h3::android::OnSavesImported(pathText, errorText);
 }
 
+extern "C" JNIEXPORT void JNICALL Java_org_h3recomp_H3SlintActivity_nativeLogExported(
+    JNIEnv* env, jclass, jstring path, jstring error)
+{
+    const char* p = env->GetStringUTFChars(path, nullptr);
+    const char* e = env->GetStringUTFChars(error, nullptr);
+    std::string pathText = p ? p : "";
+    std::string errorText = e ? e : "";
+    if (p) env->ReleaseStringUTFChars(path, p);
+    if (e) env->ReleaseStringUTFChars(error, e);
+    h3::android::OnLogExported(pathText, errorText);
+}
+
 namespace h3::android
 {
     std::filesystem::path GameRoot()
@@ -150,6 +162,7 @@ namespace h3::android
     void StartGame() { CallVoid("startGame"); }
     void ExportSaves() { CallVoid("exportSaves"); }
     void ImportSaves() { CallVoid("importSaves"); }
+    void ExportLog() { CallVoid("exportLog"); }
 }
 #else
 
@@ -166,5 +179,6 @@ namespace h3::android
     void StartGame() { std::fprintf(stderr, "[menu] start game: Android-only\n"); }
     void ExportSaves() { std::fprintf(stderr, "[menu] save export is Android-only\n"); }
     void ImportSaves() { std::fprintf(stderr, "[menu] save import is Android-only\n"); }
+    void ExportLog() { std::fprintf(stderr, "[menu] log export is Android-only\n"); }
 }
 #endif

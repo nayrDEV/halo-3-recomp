@@ -125,6 +125,15 @@ namespace h3::android
             SetStatus(error.empty() ? "Saves imported. Start the game to load them." : error);
         });
     }
+
+    void OnLogExported(const std::string& path, const std::string& error)
+    {
+        slint::invoke_from_event_loop([path, error] {
+            if (!g_ui)
+                return;
+            SetStatus(error.empty() ? "Log exported. Send that file with your report." : error);
+        });
+    }
 }
 
 #ifdef __ANDROID__
@@ -138,7 +147,9 @@ int main(int argc, char** argv)
     std::filesystem::create_directories(g_root, error);
 
     h3::config::Settings settings;
-    h3::config::Load(g_root / h3::config::kFileName, settings);
+    bool loaded = h3::config::Load(g_root / h3::config::kFileName, settings);
+    if (!loaded)
+        settings.debug.logToFile = true;
 
     auto ui = MainWindow::create();
     g_ui = ui;
@@ -149,6 +160,7 @@ int main(int argc, char** argv)
     ui->set_resolution_index(ResolutionIndex(settings.video.outputHeight));
     ui->set_aa_index(AntiAliasingIndex(settings.video.antiAliasing));
     ui->set_touch_controls(settings.video.touchControls);
+    ui->set_log_to_file(true);  // debug builds: log by default, the checkbox can disable it
     ui->set_texture_cache_index(settings.video.astcBlock == 6 ? 2 : settings.video.astcBlock == 4 ? 1 : 0);
     ui->set_version(slint::SharedString("0.1.0 // arm64"));
 
@@ -182,6 +194,11 @@ int main(int argc, char** argv)
         SetStatus("Choose a Halo 3 save archive (.zip)...");
     });
 
+    ui->on_export_log([] {
+        h3::android::ExportLog();
+        SetStatus("Preparing the log file...");
+    });
+
     ui->on_play([ui] {
         SetStatus("Starting Halo 3...");
         h3::config::Settings settings;
@@ -198,6 +215,7 @@ int main(int argc, char** argv)
         default: settings.video.antiAliasing = h3::config::AntiAliasing::Fxaa; break;
         }
         settings.video.touchControls = ui->get_touch_controls();
+        settings.debug.logToFile = ui->get_log_to_file();
         switch (ui->get_texture_cache_index())
         {
         case 1: settings.video.astcBlock = 4; break;

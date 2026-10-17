@@ -22,11 +22,13 @@
 #ifdef __ANDROID__
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_system.h>
+#include <android/log.h>
 #endif
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -47,12 +49,48 @@ namespace
     // The 360 hard drive has two cache partitions (cache0:, cache1:) that
     // Halo 3 streams map data into.
     constexpr int kCachePartitionCount = 2;
+
+#ifdef __ANDROID__
+    // Android discards a plain process's stdout/stderr. Send both through a
+    // pipe to logcat so the in-app EXPORT LOG button can capture boot
+    // messages even when the game never reaches its own file log.
+    void LogcatReader(int fd)
+    {
+        FILE* stream = fdopen(fd, "r");
+        if (!stream)
+            return;
+        char line[1024];
+        while (fgets(line, sizeof(line), stream))
+        {
+            size_t length = strlen(line);
+            while (length && (line[length - 1] == '\n' || line[length - 1] == '\r'))
+                line[--length] = 0;
+            if (length)
+                __android_log_write(ANDROID_LOG_INFO, "H3Recomp", line);
+        }
+        fclose(stream);
+    }
+
+    void RedirectStdioToLogcat()
+    {
+        int fds[2];
+        if (pipe(fds) != 0)
+            return;
+        dup2(fds[1], STDOUT_FILENO);
+        dup2(fds[1], STDERR_FILENO);
+        close(fds[1]);
+        setvbuf(stdout, nullptr, _IOLBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
+        std::thread(LogcatReader, fds[0]).detach();
+    }
+#endif
 }
 
 // Usage: H3Recomp [path to default.xex]   (default: private/default.xex)
 int main(int argc, char* argv[])
 {
 #ifdef __ANDROID__
+    RedirectStdioToLogcat();
     // SDLActivity owns the Android context. Initializing video here makes
     // SDL_GetAndroidExternalStoragePath() usable before CreateMainWindow.
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD);

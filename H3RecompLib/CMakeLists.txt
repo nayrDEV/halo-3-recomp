@@ -82,7 +82,7 @@ foreach(config ${H3_MODULE_CONFIGS})
     target_compile_definitions(H3Module_${ident} PRIVATE PPCFuncMappings=${mappings})
 
     add_library(H3ModuleStubs_${ident} OBJECT ${dir}/import_stubs.cpp)
-    target_include_directories(H3ModuleStubs_${ident} PRIVATE ${dir} ${CMAKE_SOURCE_DIR}/H3Recomp)
+    target_include_directories(H3ModuleStubs_${ident} PRIVATE ${dir} ${CMAKE_CURRENT_SOURCE_DIR}/../H3Recomp)
     target_link_libraries(H3ModuleStubs_${ident} PRIVATE XenonUtils)
     target_compile_options(H3ModuleStubs_${ident} PRIVATE ${options})
 

@@ -163,7 +163,7 @@ int main(int argc, char** argv)
     ui->set_performance_overlay(settings.video.performanceOverlay);
     ui->set_log_to_file(true);  // debug builds: log by default, the checkbox can disable it
     ui->set_texture_cache_index(settings.video.astcBlock == 6 ? 2 : settings.video.astcBlock == 4 ? 1 : 0);
-    ui->set_version(slint::SharedString("0.1.0 // arm64"));
+    ui->set_version(slint::SharedString("0.1.0 // arm64 pre-release"));
 
     RefreshGameState();
 

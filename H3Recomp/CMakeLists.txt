@@ -29,6 +29,7 @@ add_executable(H3Recomp
     gpu/texture_cache.cpp
     input/input.cpp
     input/touch.cpp
+    perf/overlay.cpp
     debug/first_calls.cpp
     debug/profiler.cpp
     debug/state_hash.cpp
@@ -77,6 +78,11 @@ add_executable(H3Recomp
 )
 
 target_include_directories(H3Recomp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# The fake CRT save/restore helpers in the game and in the loaded DLLs have
+# the same names; the first definition wins, as it does on the console.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT WIN32)
+    target_link_options(H3Recomp PRIVATE "-Wl,--allow-multiple-definition")
+endif()
 # xxHash (header only, vendored by XenonRecomp): fast hashing of texture memory.
 target_include_directories(H3Recomp PRIVATE ${PROJECT_SOURCE_DIR}/thirdparty/XenonRecomp/thirdparty/xxHash)
 # XXH3's AVX2 build, picked at runtime (ContentHash) so the executable

@@ -7,9 +7,11 @@
 #include <ppc_recomp_shared.h>
 
 #include "imports.h"
+#include "../config/settings.h"
 #include "../gpu/command_processor.h"
 #include "../memory.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 
@@ -18,8 +20,16 @@ using namespace h3::kernel;
 
 namespace
 {
-    constexpr uint32_t kDisplayWidth = 1280;
-    constexpr uint32_t kDisplayHeight = 720;
+    // The launcher's resolution selector is the guest's video mode, not just
+    // a presentation scale. 16:9, even width, capped at 720p for now.
+    uint32_t DisplayHeight()
+    {
+        return uint32_t(std::clamp(config::Active().video.outputHeight, 360, 720));
+    }
+    uint32_t DisplayWidth()
+    {
+        return (DisplayHeight() * 16 / 9 + 1) & ~1u;
+    }
     constexpr float kRefreshRate = 60.0f;
 
     // Stores a float into guest memory (big-endian).
@@ -34,8 +44,8 @@ namespace
     void WriteVideoMode(uint32_t mode)
     {
         memset(GuestPtr<uint8_t>(mode), 0, 0x30);
-        GuestRef<uint32_t>(mode + 0x00) = kDisplayWidth;
-        GuestRef<uint32_t>(mode + 0x04) = kDisplayHeight;
+        GuestRef<uint32_t>(mode + 0x00) = DisplayWidth();
+        GuestRef<uint32_t>(mode + 0x04) = DisplayHeight();
         GuestRef<uint32_t>(mode + 0x08) = 0;
         GuestRef<uint32_t>(mode + 0x0C) = 1;
         GuestRef<uint32_t>(mode + 0x10) = 1;
@@ -63,7 +73,8 @@ PPC_FUNC(__imp__XGetVideoMode)
 // DWORD VdQueryVideoFlags(): 1 widescreen, 2 at least 1024 wide, 4 at least 1920 wide.
 PPC_FUNC(__imp__VdQueryVideoFlags)
 {
-    ctx.r3.u64 = 1 | 2;
+    uint32_t width = DisplayWidth();
+    ctx.r3.u64 = 1 | (width >= 1024 ? 2 : 0) | (width >= 1920 ? 4 : 0);
 }
 
 // DWORD XGetAVPack(): 8 is HDMI, as Xenia reports by default.
@@ -93,16 +104,16 @@ PPC_FUNC(__imp__VdGetCurrentDisplayInformation)
 {
     uint32_t info = ctx.r3.u32;
     memset(GuestPtr<uint8_t>(info), 0, 0x58);
-    GuestRef<uint16_t>(info + 0x00) = kDisplayWidth;
-    GuestRef<uint16_t>(info + 0x02) = kDisplayHeight;
-    GuestRef<uint32_t>(info + 0x10) = kDisplayWidth;   // scaler source rect x2
-    GuestRef<uint32_t>(info + 0x14) = kDisplayHeight;  // scaler source rect y2
-    GuestRef<uint32_t>(info + 0x18) = kDisplayWidth;   // scaled output width
-    GuestRef<uint32_t>(info + 0x1C) = kDisplayHeight;  // scaled output height
-    GuestRef<uint16_t>(info + 0x40) = kDisplayWidth;
-    GuestRef<uint16_t>(info + 0x42) = kDisplayHeight;
+    GuestRef<uint16_t>(info + 0x00) = DisplayWidth();
+    GuestRef<uint16_t>(info + 0x02) = DisplayHeight();
+    GuestRef<uint32_t>(info + 0x10) = DisplayWidth();   // scaler source rect x2
+    GuestRef<uint32_t>(info + 0x14) = DisplayHeight();  // scaler source rect y2
+    GuestRef<uint32_t>(info + 0x18) = DisplayWidth();   // scaled output width
+    GuestRef<uint32_t>(info + 0x1C) = DisplayHeight();  // scaled output height
+    GuestRef<uint16_t>(info + 0x40) = DisplayWidth();
+    GuestRef<uint16_t>(info + 0x42) = DisplayHeight();
     StoreFloat(info + 0x44, kRefreshRate);
-    GuestRef<uint16_t>(info + 0x4E) = kDisplayWidth;
+    GuestRef<uint16_t>(info + 0x4E) = DisplayWidth();
 }
 
 // --- Engine and display setup ----------------------------------------------

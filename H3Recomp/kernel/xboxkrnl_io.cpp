@@ -110,8 +110,20 @@ namespace
     constexpr uint64_t kUseFilePointer = 0xFFFFFFFFFFFFFFFEull;
     constexpr uint64_t kWriteToEnd = 0xFFFFFFFFFFFFFFFFull;
 
-    const bool g_logFiles = EnvFlag("H3_LOG_FILES");
-    const bool g_logReads = EnvFlag("H3_LOG_READS");
+    bool LogFiles()
+    {
+        static const bool value = EnvFlag("H3_LOG_FILES");
+        return value;
+    }
+    bool LogReads()
+    {
+        static const bool value = EnvFlag("H3_LOG_READS");
+        return value;
+    }
+#define g_logFiles LogFiles()
+#define g_logReads LogReads()
+    uint32_t g_currentOpenLr = 0;
+    uint32_t g_currentOpenCaller = 0;
 
     // Access mask bits, grouped the way NT's share access check sees them.
     // Opens that ask for none of these (attributes, SYNCHRONIZE) neither
@@ -231,6 +243,8 @@ namespace
         File() : KernelObject(ObjectType::File) {}
         ~File() override
         {
+            if (g_logFiles)
+                fprintf(stderr, "[io] close %s\n", guestPath.c_str());
             if (stream != nullptr)
                 fclose(stream);
             bool remove = shared ? ReleaseShareAccess(this, hostPath, grant, deleteOnClose) : deleteOnClose;
@@ -410,9 +424,9 @@ namespace
 
         auto finish = [&](uint32_t status, uint32_t information)
         {
-            if (g_logFiles || (status != kStatusSuccess && status != kStatusObjectNameNotFound))
-                fprintf(stderr, "[io] open %s (disposition %u, options 0x%X, access 0x%08X, share %u) -> 0x%08X\n",
-                    guestPath.c_str(), disposition, options, access, share, status);
+            if (g_logFiles || status != kStatusSuccess)
+                fprintf(stderr, "[io] open %s (disposition %u, options 0x%X, access 0x%08X, share %u, lr %08X caller %08X) -> 0x%08X\n",
+                    guestPath.c_str(), disposition, options, access, share, g_currentOpenLr, g_currentOpenCaller, status);
             CompleteIo(iosb, status, information, 0);
             return status;
         };
@@ -453,8 +467,26 @@ namespace
         {
             uint32_t status = AcquireShareAccess(file.get(), file->hostPath, access, share, file->grant);
             if (status != kStatusSuccess)
-                return finish(status, 0);
-            file->shared = true;
+            {
+                // Halo 3 keeps its cache savegame handles open across the
+                // initial cache setup and then reopens the same slot with
+                // share=0. The console's cache filesystem allows that; the
+                // host share table does not. Don't fail the title load on it.
+                if (status == kStatusSharingViolation
+                    && mapped->devicePath.find("savegame") != std::string::npos)
+                {
+                    if (g_logFiles)
+                        fprintf(stderr, "[io] ignoring share violation for %s\n", guestPath.c_str());
+                }
+                else
+                {
+                    return finish(status, 0);
+                }
+            }
+            else
+            {
+                file->shared = true;
+            }
         }
 
         if (create && file->directory)
@@ -473,7 +505,10 @@ namespace
         uint32_t information = create ? kCreated
             : truncate ? (disposition == kSupersede ? kSuperseded : kOverwritten)
             : kOpened;
-        GuestRef<uint32_t>(handlePtr) = CreateHandle(file);
+        uint32_t newHandle = CreateHandle(file);
+        GuestRef<uint32_t>(handlePtr) = newHandle;
+        if (g_logFiles)
+            fprintf(stderr, "[io] handle %08X for %s\n", newHandle, guestPath.c_str());
         return finish(kStatusSuccess, information);
     }
 
@@ -515,6 +550,9 @@ namespace
 //     ULONG shareAccess, ULONG disposition, ULONG options)
 PPC_FUNC(__imp__NtCreateFile)
 {
+    g_currentOpenLr = uint32_t(ctx.lr);
+    uint32_t backChain = GuestRef<uint32_t>(ctx.r1.u32);
+    g_currentOpenCaller = backChain ? uint32_t(GuestRef<uint32_t>(backChain - 8)) : 0;
     ctx.r3.u64 = OpenFile(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, 8));
 }
 
@@ -522,6 +560,9 @@ PPC_FUNC(__imp__NtCreateFile)
 //     PIO_STATUS_BLOCK iosb, ULONG shareAccess, ULONG options)
 PPC_FUNC(__imp__NtOpenFile)
 {
+    g_currentOpenLr = uint32_t(ctx.lr);
+    uint32_t backChain = GuestRef<uint32_t>(ctx.r1.u32);
+    g_currentOpenCaller = backChain ? uint32_t(GuestRef<uint32_t>(backChain - 8)) : 0;
     ctx.r3.u64 = OpenFile(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, kOpen, ctx.r8.u32);
 }
 
@@ -555,9 +596,9 @@ PPC_FUNC(__imp__NtReadFile)
     if (g_logReads)
         fprintf(stderr, "[io] read %s @0x%llX len 0x%X -> 0x%08X (%zu bytes)\n", file->guestPath.c_str(),
             (unsigned long long)(file->position - read), length, ctx.r8.u32, read);
-    if (g_logFiles && read != length)
-        fprintf(stderr, "[io] short read of %s: %zu of %u bytes at 0x%llX\n", file->guestPath.c_str(), read, length,
-            (unsigned long long)(file->position - read));
+    if (read != length)
+        fprintf(stderr, "[io] short read of %s: %zu of %u bytes at 0x%llX (status 0x%08X)\n", file->guestPath.c_str(), read, length,
+            (unsigned long long)(file->position - read), status);
     CompleteIo(ctx.r7.u32, status, uint32_t(read), ctx.r4.u32);
     PostFileCompletion(*file, ctx.r6.u32, status, uint32_t(read));
     QueueIoApc(ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);

@@ -121,6 +121,10 @@ namespace h3::config
                     video.outputHeight = std::clamp(atoi(value.c_str()), 360, 1080);
                 else if (key == "touch_controls")
                     video.touchControls = ParseBool(value);
+                else if (key == "performance_overlay")
+                    video.performanceOverlay = ParseBool(value);
+                else if (key == "disable_msaa")
+                    video.disableMsaa = ParseBool(value);
                 else if (key == "astc_block")
                     video.astcBlock = atoi(value.c_str()) == 6 ? 6 : atoi(value.c_str()) == 4 ? 4 : 0;
             }
@@ -257,6 +261,8 @@ namespace h3::config
             << "\n"
             << "output_height = " << video.outputHeight << "\n"
             << "touch_controls = " << BoolText(video.touchControls) << "\n"
+            << "performance_overlay = " << BoolText(video.performanceOverlay) << "\n"
+            << "disable_msaa = " << BoolText(video.disableMsaa) << "\n"
             << "astc_block = " << video.astcBlock << "\n\n";
 
         const ProfileSettings& profile = settings.profile;

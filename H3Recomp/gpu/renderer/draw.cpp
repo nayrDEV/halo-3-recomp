@@ -1329,6 +1329,7 @@ namespace h3::gpu::renderer::internal
                 UploadResidentRanges(Commands());
             return;
         }
+        g_frameFlushes++;
         bool timing = GpuTimingActive();
         uint32_t timedDraws = uint32_t(g_pending.size());
         if (timing)
@@ -1486,10 +1487,16 @@ namespace h3::gpu::renderer::internal
                 SDL_SetGPUStencilReference(pass, draw->stencilReference);
             if (!previous || memcmp(&draw->blendConstants, &previous->blendConstants, sizeof(draw->blendConstants)) != 0)
                 SDL_SetGPUBlendConstants(pass, draw->blendConstants);
-            if (!draw->vertexTextures.empty())
-                SDL_BindGPUVertexSamplers(pass, 0, draw->vertexTextures.data(), uint32_t(draw->vertexTextures.size()));
-            if (!draw->pixelTextures.empty())
-                SDL_BindGPUFragmentSamplers(pass, 0, draw->pixelTextures.data(), uint32_t(draw->pixelTextures.size()));
+            auto sameBindings = [](const auto& a, const auto& b) {
+                return a.size() == b.size() &&
+                    (a.empty() || memcmp(a.data(), b.data(), a.size() * sizeof(a[0])) == 0);
+            };
+            if (!previous || !sameBindings(draw->vertexTextures, previous->vertexTextures))
+                if (!draw->vertexTextures.empty())
+                    SDL_BindGPUVertexSamplers(pass, 0, draw->vertexTextures.data(), uint32_t(draw->vertexTextures.size()));
+            if (!previous || !sameBindings(draw->pixelTextures, previous->pixelTextures))
+                if (!draw->pixelTextures.empty())
+                    SDL_BindGPUFragmentSamplers(pass, 0, draw->pixelTextures.data(), uint32_t(draw->pixelTextures.size()));
             // H3_UNIFORM_CONSTANTS: float constants pushed when the snapshot
             // differs from the previous draw's.
             if (g_uniformConstants)
@@ -1626,6 +1633,9 @@ namespace h3::gpu::renderer::internal
         uint32_t mode = ReadRegister(kRegRbModeControl) & 7;
         if (mode != kEdramModeColorDepth && mode != kEdramModeDepthOnly)
             return;
+        static const bool skipDepthOnly = EnvFlag("H3_SKIP_DEPTH_ONLY");
+        if (skipDepthOnly && mode == kEdramModeDepthOnly)
+            return;
         uint32_t vte = ReadRegister(kRegPaClVteCntl);
         bool screenSpaceRectangles = primitive == kPrimRectangleList && (vte & kVteScreenSpaceXyz) == kVteScreenSpaceXyz;
         if (mode == kEdramModeDepthOnly && screenSpaceRectangles)
@@ -1653,11 +1663,20 @@ namespace h3::gpu::renderer::internal
         // compute variant for the writes (memexport.cpp). Shaders that only
         // write memory have nothing to rasterize; drawing them would put
         // points at the default position.
+        static const bool skipMemExport = EnvFlag("H3_SKIP_MEMEXPORT");
         if (g_vertexShader->info.usesMemExport)
         {
-            RunMemExport(*g_vertexShader, initiator, indexBase, dmaSize);
-            if (!g_vertexShader->info.writesPosition)
-                return;
+            if (skipMemExport)
+            {
+                if (!g_vertexShader->info.writesPosition)
+                    return;
+            }
+            else
+            {
+                RunMemExport(*g_vertexShader, initiator, indexBase, dmaSize);
+                if (!g_vertexShader->info.writesPosition)
+                    return;
+            }
         }
 
         uint32_t colorMask = ReadRegister(kRegRbColorMask);

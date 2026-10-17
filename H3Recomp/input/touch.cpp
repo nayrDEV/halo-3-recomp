@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <unordered_map>
 
 namespace h3::input::touch
@@ -63,9 +64,15 @@ namespace h3::input::touch
         {
             Role role = Role::None;
             float x = 0, y = 0;
+            uint64_t releaseAt = 0;  // latched briefly so a tap survives a slow poll
         };
 
         std::unordered_map<SDL_FingerID, Touch> g_touches;
+        std::mutex g_stateMutex;
+        Role g_mouseRole = Role::None;
+        float g_mouseX = 0, g_mouseY = 0;
+        bool g_mouseDown = false;
+        uint64_t g_mouseReleaseAt = 0;
 
         SDL_FRect ButtonRect(const Button& button, float width, float height)
         {
@@ -181,8 +188,71 @@ namespace h3::input::touch
         if (!Enabled())
             return false;
 
+        std::lock_guard lock(g_stateMutex);
+
+        auto hit = [&](float nx, float ny, Role& role)
+        {
+            SDL_Window* window = SDL_GetWindowFromID(event.motion.windowID);
+            int w = 1, h = 1;
+            if (window)
+                SDL_GetWindowSizeInPixels(window, &w, &h);
+            if (HitButton(nx, ny, float(w), float(h), role))
+                return true;
+            if (InStick(nx, ny, kStickCX, kStickCY, float(w), float(h)))
+            {
+                role = Role::LeftStick;
+                return true;
+            }
+            if (InStick(nx, ny, kRightStickCX, kRightStickCY, float(w), float(h)))
+            {
+                role = Role::RightStick;
+                return true;
+            }
+            return false;
+        };
+
         switch (event.type)
         {
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (event.button.button != SDL_BUTTON_LEFT)
+                return false;
+        {
+            SDL_Window* window = SDL_GetWindowFromID(event.button.windowID);
+            int w = 1, h = 1;
+            if (window)
+                SDL_GetWindowSizeInPixels(window, &w, &h);
+            float nx = w > 0 ? event.button.x / float(w) : 0.0f;
+            float ny = h > 0 ? event.button.y / float(h) : 0.0f;
+            Role role = Role::None;
+            if (!hit(nx, ny, role))
+                return false;
+            g_mouseRole = role;
+            g_mouseX = nx;
+            g_mouseY = ny;
+            g_mouseDown = true;
+            g_mouseReleaseAt = 0;
+            return true;
+        }
+        case SDL_EVENT_MOUSE_MOTION:
+            if (!g_mouseDown)
+                return false;
+        {
+            SDL_Window* window = SDL_GetWindowFromID(event.motion.windowID);
+            int w = 1, h = 1;
+            if (window)
+                SDL_GetWindowSizeInPixels(window, &w, &h);
+            g_mouseX = w > 0 ? event.motion.x / float(w) : 0.0f;
+            g_mouseY = h > 0 ? event.motion.y / float(h) : 0.0f;
+            return true;
+        }
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (event.button.button != SDL_BUTTON_LEFT)
+                return false;
+            if (!g_mouseDown)
+                return false;
+            g_mouseDown = false;
+            g_mouseReleaseAt = SDL_GetTicks() + 700;
+            return true;
         case SDL_EVENT_FINGER_DOWN:
         {
             Role role = Role::None;
@@ -199,7 +269,7 @@ namespace h3::input::touch
                 role = Role::RightStick;
             if (role == Role::None)
                 return false;
-            g_touches[event.tfinger.fingerID] = { role, event.tfinger.x, event.tfinger.y };
+            g_touches[event.tfinger.fingerID] = { role, event.tfinger.x, event.tfinger.y, 0 };
             return true;
         }
         case SDL_EVENT_FINGER_MOTION:
@@ -213,7 +283,13 @@ namespace h3::input::touch
         }
         case SDL_EVENT_FINGER_UP:
         case SDL_EVENT_FINGER_CANCELED:
-            return g_touches.erase(event.tfinger.fingerID) != 0;
+        {
+            auto found = g_touches.find(event.tfinger.fingerID);
+            if (found == g_touches.end())
+                return false;
+            found->second.releaseAt = SDL_GetTicks() + 700;
+            return true;
+        }
         default:
             return false;
         }
@@ -222,6 +298,12 @@ namespace h3::input::touch
     State GetState()
     {
         State state;
+        std::lock_guard lock(g_stateMutex);
+        uint64_t now = SDL_GetTicks();
+        std::erase_if(g_touches, [&](const auto& entry)
+        {
+            return entry.second.releaseAt != 0 && now >= entry.second.releaseAt;
+        });
         for (const auto& [id, touch] : g_touches)
         {
             if (uint16_t bit = ButtonBit(touch.role))
@@ -239,6 +321,25 @@ namespace h3::input::touch
             {
                 state.rightX = int16_t(std::clamp((touch.x - kRightStickCX) / kStickRadius, -1.0f, 1.0f) * kStickMax);
                 state.rightY = int16_t(std::clamp(-(touch.y - kRightStickCY) / kStickRadius, -1.0f, 1.0f) * kStickMax);
+            }
+        }
+        if (g_mouseDown || (g_mouseRole != Role::None && now < g_mouseReleaseAt))
+        {
+            if (uint16_t bit = ButtonBit(g_mouseRole))
+                state.buttons |= bit;
+            if (g_mouseRole == Role::LT)
+                state.leftTrigger = kTriggerMax;
+            else if (g_mouseRole == Role::RT)
+                state.rightTrigger = kTriggerMax;
+            else if (g_mouseRole == Role::LeftStick)
+            {
+                state.leftX = int16_t(std::clamp((g_mouseX - kStickCX) / kStickRadius, -1.0f, 1.0f) * kStickMax);
+                state.leftY = int16_t(std::clamp(-(g_mouseY - kStickCY) / kStickRadius, -1.0f, 1.0f) * kStickMax);
+            }
+            else if (g_mouseRole == Role::RightStick)
+            {
+                state.rightX = int16_t(std::clamp((g_mouseX - kRightStickCX) / kStickRadius, -1.0f, 1.0f) * kStickMax);
+                state.rightY = int16_t(std::clamp(-(g_mouseY - kRightStickCY) / kStickRadius, -1.0f, 1.0f) * kStickMax);
             }
         }
         return state;

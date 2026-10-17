@@ -8,6 +8,7 @@
 #include "objects.h"
 #include "thread.h"
 #include "../input/input.h"
+#include "../input/touch.h"
 #include "../memory.h"
 
 #include <algorithm>
@@ -134,9 +135,34 @@ PPC_FUNC(__imp__XamInputGetState)
         ctx.r3.u64 = kErrorDeviceNotConnected;
         return;
     }
+    input::GamepadState state = input::GetState();
+    // Sample the touch overlay here as well as on the window thread: if the
+    // renderer is busy, the window thread can be a frame or two late and a
+    // short tap would otherwise be missed.
+    input::touch::State touch = input::touch::GetState();
+    static input::touch::State lastTouch{};
+    static uint32_t touchPacket = 0;
+    if (touch.buttons != lastTouch.buttons || touch.leftTrigger != lastTouch.leftTrigger ||
+        touch.rightTrigger != lastTouch.rightTrigger || touch.leftX != lastTouch.leftX ||
+        touch.leftY != lastTouch.leftY || touch.rightX != lastTouch.rightX || touch.rightY != lastTouch.rightY)
+    {
+        lastTouch = touch;
+        ++touchPacket;
+    }
+    auto mergeAxis = [](int16_t a, int16_t b)
+    {
+        return std::abs(int32_t(a)) >= std::abs(int32_t(b)) ? a : b;
+    };
+    state.buttons |= touch.buttons;
+    state.leftTrigger = std::max(state.leftTrigger, touch.leftTrigger);
+    state.rightTrigger = std::max(state.rightTrigger, touch.rightTrigger);
+    state.thumbLX = mergeAxis(state.thumbLX, touch.leftX);
+    state.thumbLY = mergeAxis(state.thumbLY, touch.leftY);
+    state.thumbRX = mergeAxis(state.thumbRX, touch.rightX);
+    state.thumbRY = mergeAxis(state.thumbRY, touch.rightY);
+    state.packetNumber = std::max(state.packetNumber, touchPacket);
     if (ctx.r5.u32 != 0)
     {
-        input::GamepadState state = input::GetState();
         GuestRef<uint32_t>(ctx.r5.u32) = state.packetNumber;
         WriteGamepad(ctx.r5.u32 + 4, state);
     }

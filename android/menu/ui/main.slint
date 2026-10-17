@@ -118,6 +118,7 @@ export component MainWindow inherits Window {
     in-out property <int> resolution-index: 2;
     in-out property <int> aa-index: 1;
     in-out property <bool> touch-controls: true;
+    in-out property <bool> performance-overlay: true;
     in-out property <bool> log-to-file: true;
     in-out property <int> texture-cache-index: 0;
     in-out property <bool> importing: false;
@@ -411,7 +412,7 @@ export component MainWindow inherits Window {
                             }
                             HorizontalLayout {
                                 spacing: 6px;
-                                for label[i] in ["OFF", "ASTC 4x4", "ASTC 6x6"] : SegmentButton {
+                                for label[i] in ["BCn", "ASTC 4x4", "ASTC 6x6"] : SegmentButton {
                                     label: label;
                                     selected: root.texture-cache-index == i;
                                     horizontal-stretch: 1;
@@ -419,7 +420,7 @@ export component MainWindow inherits Window {
                                 }
                             }
                             Text {
-                                text: "BC textures are converted once and stored in app storage.";
+                                text: "BCn uploads the native BC1/BC2/BC3/BC5 data and skips ASTC conversion. ASTC is converted once and cached in app storage.";
                                 color: #7F947F;
                                 font-size: 9px;
                                 wrap: word-wrap;
@@ -428,7 +429,7 @@ export component MainWindow inherits Window {
                     }
 
                     Card {
-                        height: 112px;
+                        height: 150px;
                         title: "CONTROLS";
                         subtitle: "Xbox 360 layout on screen; Bluetooth and USB gamepads also work.";
 
@@ -452,6 +453,19 @@ export component MainWindow inherits Window {
                                 color: #7F947F;
                                 font-size: 9px;
                                 wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "PERFORMANCE OVERLAY  //  FPS  CPU  GPU  RAM";
+                                    color: #D6E3D1;
+                                    font-size: 10px;
+                                    horizontal-stretch: 1;
+                                }
+                                CheckBox {
+                                    checked: root.performance-overlay;
+                                    toggled => { root.performance-overlay = self.checked; }
+                                }
                             }
                         }
                     }

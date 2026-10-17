@@ -35,6 +35,13 @@ Thumbs.db
 __pycache__/
 captures/
 
+# Local bring-up logs, status files and built APKs
+/Halo3Recomp-*.log
+/Halo3Recomp-log*.txt
+/Halo3Recomp-a55-*.md
+/screenshots/
+/*.apk
+
 # Android build / local SDK path
 android/.gradle/
 android/local.properties

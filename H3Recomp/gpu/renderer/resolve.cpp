@@ -648,10 +648,10 @@ namespace h3::gpu::renderer::internal
                 sampleMask = kSampleMaskPair23;
         }
         constexpr int32_t kAlignMask = ~(kResolveAlignment - 1);
-        x0 = std::clamp(x0 & kAlignMask, 0, int32_t(kRenderTargetWidth) / samplesX);
-        y0 = std::clamp(y0 & kAlignMask, 0, int32_t(kRenderTargetHeight) / samplesY);
-        x1 = std::clamp((x1 + kResolveAlignment - 1) & kAlignMask, x0, int32_t(kRenderTargetWidth) / samplesX);
-        y1 = std::clamp((y1 + kResolveAlignment - 1) & kAlignMask, y0, int32_t(kRenderTargetHeight) / samplesY);
+        x0 = std::clamp(x0 & kAlignMask, 0, int32_t(TargetWidth()) / samplesX);
+        y0 = std::clamp(y0 & kAlignMask, 0, int32_t(TargetHeight()) / samplesY);
+        x1 = std::clamp((x1 + kResolveAlignment - 1) & kAlignMask, x0, int32_t(TargetWidth()) / samplesX);
+        y1 = std::clamp((y1 + kResolveAlignment - 1) & kAlignMask, y0, int32_t(TargetHeight()) / samplesY);
         if (x1 <= x0 || y1 <= y0)
             return;
 

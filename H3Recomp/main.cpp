@@ -33,6 +33,7 @@
 #include <string>
 #include <thread>
 
+#include <pthread.h>
 #include <unistd.h>
 
 // The recompiler's function lookup table lives right after the image and
@@ -131,7 +132,7 @@ int main(int argc, char* argv[])
         bool loaded = h3::config::Load(settingsPath, settings);
         // Debug options: the log file, then the H3_* switches (before
         // anything reads them; a variable set in the real environment wins).
-        if (settings.debug.logToFile)
+        if (settings.debug.logToFile && std::getenv("H3_FORCE_LOGCAT") == nullptr)
         {
             if (freopen(logPath.string().c_str(), "w", stdout))
             {
@@ -183,15 +184,37 @@ int main(int argc, char* argv[])
     // wants on the host main thread.
     std::thread([]
     {
+        pthread_setname_np(pthread_self(), "H3GuestMain");
         PPCContext ctx{};
         h3::kernel::AdoptHostThread(ctx, std::max(h3::kernel::g_module.stackSize, kMinMainStackSize));
 
+#if !defined(__ANDROID__)
+        if (std::getenv("H3_WATCHDOG") != nullptr)
+        {
+            std::thread([] {
+                std::this_thread::sleep_for(std::chrono::seconds(8));
+                h3::kernel::DumpAllHostThreads();
+            }).detach();
+        }
+#endif
         printf("Entering guest at _xstart\n");
         fflush(stdout);
         _xstart(ctx, h3::g_base);
         printf("Guest returned\n");
         h3::video::RequestQuit(0);
     }).detach();
+
+    if (std::getenv("H3_DUMP_THREADS") != nullptr)
+    {
+        std::thread([] {
+            pthread_setname_np(pthread_self(), "H3Watchdog");
+            for (int i = 0; i < 4; i++)
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(45));
+                h3::kernel::DumpAllHostThreads();
+            }
+        }).detach();
+    }
 
     // Guest threads can't be stopped cleanly, so leave without running
     // destructors once the window closes.

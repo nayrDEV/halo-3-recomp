@@ -20,6 +20,22 @@ which is the best reference for what a finished runtime looks like.
 [Xenia](https://github.com/xenia-project/xenia) is the reference for kernel
 and GPU behaviour.
 
+## Credits and lineage
+
+- **Original PC Halo 3 recompilation / runtime base:**
+  [george0815/halo-3-recomp](https://github.com/george0815/halo-3-recomp).
+  The Android arm64 port in this branch is built on top of that project.
+- [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) (hedge-dev) for the
+  PowerPC static-recompilation toolchain.
+- [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp) for the
+  runtime/launcher model and reference code.
+- [Xenia](https://github.com/xenia-project/xenia) for Xbox 360 kernel and GPU
+  behavior.
+- SDL3, Slint, shaderc, FFmpeg/xmaframes, Arm astcenc and bcdec for the
+  Android runtime, UI, shader compilation, XMA audio and texture paths.
+- Halo 3 is © Microsoft / Bungie. This project contains **no game data**;
+  use your own legally dumped copy.
+
 ## Layout
 
 ```
@@ -74,12 +90,19 @@ saved profile settings, `private/hdd/profile_settings.bin`).
 An experimental Android arm64 port lives in `android/`: a Slint launcher for
 importing an ISO or game folder, video/control settings, and an SDL3 game
 activity with an on-screen Xbox 360 pad. Game files are copied into the
-app's internal storage; BC textures can be converted to an ASTC cache for
-Mali GPUs. The game code is still generated from your own `default.xex` on
-the build machine and compiled into the APK; the phone imports the disc data.
-See [docs/ANDROID.md](docs/ANDROID.md) for
-the NDK/SDK setup, the shaderc and FFmpeg cross-builds, and the current
-limitations.
+app's internal storage. The texture selector has **BCn** (native BC1-BC5,
+no conversion), **ASTC 4x4** and **ASTC 6x6** (converted and cached in app
+storage), plus the diagnostics log export and a toggleable in-game FPS /
+CPU / GPU / RAM overlay. The game code is still generated from your own
+`default.xex` on the build machine and compiled into the APK; the phone
+imports the disc data.
+
+The port has been booted on a Galaxy A55 (Exynos 1480 / Xclipse 530): the
+menu, Forge lobby and Last Resort gameplay render, with audio and the
+on-screen pad working. Performance is still far from 60 fps; see
+[docs/A55_RESULTS.md](docs/A55_RESULTS.md) for the measured bottlenecks and
+screenshots. Build/install instructions and current limitations are in
+[docs/ANDROID.md](docs/ANDROID.md).
 
 ### Launcher
 

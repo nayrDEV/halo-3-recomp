@@ -4,6 +4,10 @@ Status: experimental. The launcher, game-file import, settings, SDL game
 activity, touch overlay and the Android runtime layer build and run. The
 actual game code is generated from **your own** `default.xex` at build time,
 so the APK must be built on a PC; the phone only imports the disc data.
+The port has been booted on a Galaxy A55: intro videos, the main menu, the
+Forge lobby and Last Resort gameplay render, with audio and the on-screen
+pad working. Performance is still far from 60 fps; see
+[A55_RESULTS.md](A55_RESULTS.md).
 
 ## What is in the APK
 
@@ -90,8 +94,43 @@ sdk.dir=/absolute/path/to/Android/Sdk
 The debug APK is at `android/app/build/outputs/apk/debug/app-debug.apk`.
 Release builds are unsigned by default; add a signing config or use debug.
 
+The release build used for the A55 was produced and signed locally with the
+Android debug keystore:
+
+```sh
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export ANDROID_HOME=$HOME/Android/Sdk
+export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865
+tools/build_android.sh release
+
+APK=android/app/build/outputs/apk/release/app-release-unsigned.apk
+apksigner sign --ks ~/.android/debug.keystore \
+  --ks-pass pass:android --key-pass pass:android \
+  --out Halo3Recomp-android-arm64.apk "$APK"
+
+adb install -r Halo3Recomp-android-arm64.apk
+```
+
 Without `private/default.xex`, the build still succeeds but `libmain.so` is
 the stub. Add the XEX, rerun `tools/recompile.sh release`, and rebuild.
+
+## Using the Android build
+
+1. Install the APK and open **Halo 3 Recompiled**.
+2. Import the disc image (ISO) or a folder containing `default.xex`. The
+   complete game is copied into app-private storage; free space is needed
+   for both the source and the copy.
+3. Choose frame rate, output height, anti-aliasing, **BCn/ASTC** textures,
+   and whether to show the on-screen pad and performance overlay.
+4. Press **Play**.
+5. Use the on-screen pad, a Bluetooth/USB gamepad, or a keyboard/mouse.
+   The back gesture/button returns from the game activity to the launcher.
+6. **EXPORT LOG** in the launcher writes the native log for diagnostics;
+   **EXPORT/IMPORT** in the Profile card handle saves.
+
+For the first launch expect a long shader warm-up. The ASTC cache is in
+`/data/user/0/org.h3recomp/files/Halo3/texturecache/`; **BCn** does not use
+it.
 
 ## Settings
 
@@ -100,10 +139,11 @@ the stub. Add the XEX, rerun `tools/recompile.sh release`, and rebuild.
 | Menu | INI key | Notes |
 |---|---|---|
 | 50/60 Hz | `frame_rate` | game simulation tick rate; 50 is not the shipped rate |
-| 360/480/720/1080p | `output_height` | presentation target; the game's internal target stays at 720p for now |
+| 360/480/720/1080p | `output_height` | requests the guest video mode/presentation height; Halo still uses large internal render targets |
 | OFF/FXAA/SMAA/FSR | `anti_aliasing` | SMAA and FSR currently run the FXAA pass as a placeholder; selected output scaling is still applied |
 | On-screen controls | `touch_controls` | overlay + touch-to-XInput mapping |
-| Textures | `astc_block` | 0 off, 4 = ASTC 4x4, 6 = ASTC 6x6 (BC1-BC5 converted and cached) |
+| Performance overlay | `performance_overlay` | in-game FPS/CPU/GPU/RAM monitor |
+| Textures | `astc_block` | 0 = **BCn** native BC1-BC5 upload with no conversion; 4 = ASTC 4x4; 6 = ASTC 6x6 (converted and cached) |
 
 The Android menu writes these when Play is pressed. The desktop launcher's
 existing settings keep working.
@@ -138,12 +178,18 @@ existing settings keep working.
 
 ## Known limitations
 
-- No full gameplay test has been run from this checkout: `private/` contains
-  no game dump and no arm64 device was attached. The runtime compiles and
-  links for arm64 with a synthetic function table; that only proves the
-  platform layer, not the game.
+- **Performance is not at 60 fps.** On a Galaxy A55 the menu is around 1 fps
+  and the intro is 6–10 fps. The menu submits ~2,200–2,700 draws across
+  ~85–87 render passes per frame. A no-draw test reaches only ~43 fps, and
+  a 320×180 internal target still gives ~2.5 fps, so the bottleneck is draw
+  and pass submission/synchronization, not just resolution. See
+  [A55_RESULTS.md](A55_RESULTS.md).
 - SMAA and FSR need their dedicated shaders; the UI options currently map to
   FXAA plus the output-resolution blit.
+- `vpkd3d128` packing types 2/3 are not implemented in generated code; some
+  particle/effect data can be incorrect.
+- BCn requires a GPU/driver that can sample BC1/BC2/BC3/BC5 textures. If the
+  device rejects them, use an ASTC mode.
 - ASTC conversion covers BC1-BC5 only. It is a CPU (NEON) encoder; there is
   no GPU compute encoder yet. RGBA/R8/R16 and 3D textures remain native.
   Conversion cost is paid on the first use of each texture, and the cache

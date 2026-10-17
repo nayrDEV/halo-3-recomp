@@ -124,14 +124,22 @@ namespace h3::gpu::renderer::internal
     // (At most config::kMaxRenderScale.)
     inline uint32_t g_renderScale = 1;
 
-    // Host render target size (sample space times the render scale).
-    inline uint32_t TargetWidth() { return kRenderTargetWidth * g_renderScale; }
-    inline uint32_t TargetHeight() { return kRenderTargetHeight * g_renderScale; }
+    // Host render target size (sample space times the render scale). When
+    // MSAA is disabled for speed, the largest guest surface (1280x720) is
+    // enough; the 4x sample-space footprint is not needed.
+    inline bool g_disableMsaa = false;
+    inline uint32_t g_targetDiv = 1;
+    inline uint32_t TargetWidth() { return (g_disableMsaa ? 1280u : kRenderTargetWidth) * g_renderScale / g_targetDiv; }
+    inline uint32_t TargetHeight() { return (g_disableMsaa ? 720u : kRenderTargetHeight) * g_renderScale / g_targetDiv; }
     // Host texels per guest pixel along x / y for an MSAA mode.
     inline uint32_t GridX(uint32_t msaa) { return SamplesX(msaa) * g_renderScale; }
     inline uint32_t GridY(uint32_t msaa) { return SamplesY(msaa) * g_renderScale; }
-    // The current surface's MSAA mode (RB_SURFACE_INFO bits 16-17).
-    inline uint32_t SurfaceMsaa() { return (ReadRegister(kRegRbSurfaceInfo) >> 16) & 3; }
+    // The current surface's MSAA mode (RB_SURFACE_INFO bits 16-17). In fast
+    // mode every surface is treated as 1x, both for drawing and resolving.
+    inline uint32_t SurfaceMsaa()
+    {
+        return g_disableMsaa ? 0 : ((ReadRegister(kRegRbSurfaceInfo) >> 16) & 3);
+    }
 
     // ------------------------------------------------------------------
     // Shared state
@@ -154,6 +162,7 @@ namespace h3::gpu::renderer::internal
     // Draw packets (draws and resolves) this frame, numbered like
     // H3_GPU_CAPTURE's "draw #n".
     inline uint32_t g_frameDraws = 0;
+    inline uint32_t g_frameFlushes = 0;
 
     // 1x1 gray textures bound where a texture isn't available.
     inline SDL_GPUTexture* g_placeholder2D = nullptr;

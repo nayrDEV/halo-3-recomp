@@ -37,8 +37,12 @@ namespace h3::kernel
         std::mutex g_nameMutex;
         std::unordered_map<std::string, std::weak_ptr<KernelObject>> g_names;
 
-        // Guarded by the dispatcher lock.
+        // Guarded by the dispatcher lock. Dispatcher objects created from
+        // guest memory are owned here. Host objects bound to a guest header
+        // are only weakly referenced: the handle (or the thread) owns them,
+        // and a stale guest reference must not keep a file open forever.
         std::unordered_map<uint32_t, std::shared_ptr<KernelObject>> g_guestObjects;
+        std::unordered_map<uint32_t, std::weak_ptr<KernelObject>> g_boundGuestObjects;
 
         thread_local std::shared_ptr<Thread> t_threadObject;
 
@@ -245,7 +249,11 @@ namespace h3::kernel
     bool CloseHandle(uint32_t handle)
     {
         std::lock_guard lock(g_handleMutex);
-        return g_handles.erase(handle) != 0;
+        auto it = g_handles.find(handle);
+        if (it == g_handles.end())
+            return false;
+        g_handles.erase(it);
+        return true;
     }
 
     std::shared_ptr<KernelObject> FindNamedObject(const std::string& name)
@@ -306,6 +314,15 @@ namespace h3::kernel
         int32_t state = GuestRef<int32_t>(header + kHeaderSignalState);
 
         auto it = g_guestObjects.find(header);
+        std::shared_ptr<KernelObject> bound;
+        if (it == g_guestObjects.end())
+        {
+            auto weak = g_boundGuestObjects.find(header);
+            if (weak != g_boundGuestObjects.end())
+                bound = weak->second.lock();
+            if (bound)
+                it = g_guestObjects.emplace(header, bound).first;
+        }
         if (it != g_guestObjects.end() && it->second->type == type)
         {
             // We mirror our state into the header after every change, so a
@@ -350,7 +367,7 @@ namespace h3::kernel
         object->guestHeader = header;
         *GuestPtr<uint8_t>(header) = uint8_t(object->type);
         object->SyncHeader();
-        g_guestObjects[header] = object;
+        g_boundGuestObjects[header] = object;
     }
 
     uint32_t GuestObjectFor(const std::shared_ptr<KernelObject>& object)

@@ -7,6 +7,7 @@
 
 #include "command_processor.h"
 #include "config/env.h"
+#include "config/settings.h"
 #include "kernel/objects.h"
 
 #include <ppc_recomp_shared.h>
@@ -28,6 +29,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <pthread.h>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -899,6 +901,7 @@ namespace h3::gpu
         // read pointer and the CPU's write pointer, forever.
         void CommandProcessorThread()
         {
+            pthread_setname_np(pthread_self(), "H3CP");
             debug::SetWallProfileThread();
             // A guest thread, so it can run the interrupt callback itself.
             static InterruptContext context;
@@ -943,6 +946,7 @@ namespace h3::gpu
         // Command processor interrupts run on the command processor thread.
         void InterruptThread()
         {
+            pthread_setname_np(pthread_self(), "H3VBlank");
             InterruptContext context;
             InitInterruptContext(context);
 
@@ -962,11 +966,12 @@ namespace h3::gpu
         // The values Xenia's graphics system returns for these registers
         // (EDRAM timing is an opaque hardware value D3D checks).
         constexpr uint32_t kEdramTiming = 0x08100748;
-        constexpr uint32_t kDisplayWidth = 1280, kDisplayHeight = 720;
+        uint32_t displayHeight = uint32_t(std::clamp(config::Active().video.outputHeight, 360, 720));
+        uint32_t displayWidth = (displayHeight * 16 / 9 + 1) & ~1u;
         WriteRegister(kRegRbEdramTiming, kEdramTiming);
         WriteRegister(kRegRbBcSpares, 0);
         WriteRegister(kRegVblankStatus, 1);
-        WriteRegister(kRegD1ModeViewportSize, (kDisplayWidth << 16) | kDisplayHeight);
+        WriteRegister(kRegD1ModeViewportSize, (displayWidth << 16) | displayHeight);
     }
 
     uint32_t MakePacketType3(uint32_t opcode, uint32_t payloadDwords)

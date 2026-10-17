@@ -10,6 +10,7 @@
 #include "gpu/renderer/internal.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <deque>
@@ -45,6 +46,15 @@ namespace h3::gpu::renderer
         constexpr size_t kMaxFramesInFlight = 2;
         std::deque<SDL_GPUFence*> g_frameFences;  // oldest first
 
+        // Copied for the window thread's performance overlay.
+        std::atomic<uint32_t> g_perfFrameDraws{ 0 };
+        std::atomic<uint32_t> g_perfFrameFlushes{ 0 };
+        std::atomic<uint32_t> g_perfPipelines{ 0 };
+        std::atomic<uint32_t> g_perfFrameWaitMs{ 0 };
+        std::atomic<uint64_t> g_perfTextureUploads{ 0 };
+        std::atomic<uint64_t> g_perfTextureUploadBytes{ 0 };
+        std::atomic<uint32_t> g_perfTargetWidth{ 0 }, g_perfTargetHeight{ 0 };
+
         // Submits the frame's last commands and waits until at most
         // kMaxFramesInFlight frames are still running on the GPU.
         void SubmitFrame()
@@ -56,15 +66,18 @@ namespace h3::gpu::renderer
             g_commands = nullptr;
             if (fence)
                 g_frameFences.push_back(fence);
+            double waited = 0;
             while (g_frameFences.size() > kMaxFramesInFlight)
             {
                 SDL_GPUFence* oldest = g_frameFences.front();
                 auto waitStart = std::chrono::steady_clock::now();
                 SDL_WaitForGPUFences(g_device, true, &oldest, 1);
-                g_frameWaitSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - waitStart).count();
+                waited += std::chrono::duration<double>(std::chrono::steady_clock::now() - waitStart).count();
                 SDL_ReleaseGPUFence(g_device, oldest);
                 g_frameFences.pop_front();
             }
+            g_frameWaitSeconds += waited;
+            g_perfFrameWaitMs.store(uint32_t(waited * 1000.0));
         }
 
         // Creates the 1x1 gray placeholder textures (2D, 3D, cube, array) and
@@ -141,8 +154,12 @@ namespace h3::gpu::renderer
         // Render scale: settings.ini, or H3_RENDER_SCALE.
         int scale = int(EnvNumber("H3_RENDER_SCALE", uint32_t(config::Active().video.renderScale)));
         g_renderScale = uint32_t(std::clamp(scale, 1, config::kMaxRenderScale));
+        g_disableMsaa = EnvNumber("H3_DISABLE_MSAA", config::Active().video.disableMsaa ? 1 : 0) != 0;
+        g_targetDiv = uint32_t(std::clamp(int(EnvNumber("H3_TARGET_DIV", 1)), 1, 4));
         if (g_renderScale > 1)
             fprintf(stderr, "[render] render scale %ux\n", g_renderScale);
+        if (g_disableMsaa)
+            fprintf(stderr, "[render] MSAA disabled (1x sample-space targets)\n");
         g_noTextures = EnvFlag("H3_NO_TEXTURES");
         g_noWriteBack = EnvFlag("H3_NO_WRITEBACK");
         g_uniformConstants = EnvFlag("H3_UNIFORM_CONSTANTS");
@@ -282,7 +299,10 @@ namespace h3::gpu::renderer
 
     void OnSwap(uint32_t frontbuffer, uint32_t width, uint32_t height)
     {
+        uint32_t completedDraws = g_frameDraws;
+        uint32_t completedFlushes = g_frameFlushes;
         g_frameDraws = 0;
+        g_frameFlushes = 0;
         if (!g_enabled)
             return;
         Flush();
@@ -377,6 +397,13 @@ namespace h3::gpu::renderer
         PollOcclusionQueries();
         FenceMemExports();
         SubmitFrame();
+        g_perfFrameDraws.store(completedDraws);
+        g_perfFrameFlushes.store(completedFlushes);
+        g_perfPipelines.store(uint32_t(PipelineCount()));
+        g_perfTextureUploads.store(g_textureUploads);
+        g_perfTextureUploadBytes.store(g_textureUploadBytes);
+        g_perfTargetWidth.store(TargetWidth());
+        g_perfTargetHeight.store(TargetHeight());
         if (frame.texture)
         {
             std::lock_guard lock(g_frameMutex);
@@ -409,5 +436,19 @@ namespace h3::gpu::renderer
             return false;
         frame = g_frame;
         return true;
+    }
+
+    PerformanceSnapshot GetPerformance()
+    {
+        PerformanceSnapshot snapshot;
+        snapshot.frameDraws = g_perfFrameDraws.load();
+        snapshot.frameFlushes = g_perfFrameFlushes.load();
+        snapshot.pipelines = g_perfPipelines.load();
+        snapshot.frameWaitMs = g_perfFrameWaitMs.load();
+        snapshot.textureUploads = g_perfTextureUploads.load();
+        snapshot.textureUploadBytes = g_perfTextureUploadBytes.load();
+        snapshot.targetWidth = g_perfTargetWidth.load();
+        snapshot.targetHeight = g_perfTargetHeight.load();
+        return snapshot;
     }
 }

@@ -48,6 +48,7 @@ namespace h3::kernel
     // Debugging: prints the host call stack of the guest thread with this
     // KTHREAD (interrupts it with SIGUSR2), as offsets into the executable.
     void DumpHostBacktrace(uint32_t kthread);
+    void DumpAllHostThreads();
 
     // Sets up the calling host thread as a guest thread with its own Thread
     // object: the process's main thread, or runtime threads that call guest

@@ -126,6 +126,20 @@ namespace
             return true;
         }
 
+        // A module DllMain that we intentionally skip leaves its static
+        // critical sections zeroed. Treat a zero owner/recursion/lock-count
+        // as an uninitialized free critical section instead of spinning.
+        if (GuestRef<uint32_t>(cs + kCsOwningThread) == 0
+            && GuestRef<int32_t>(cs + kCsRecursionCount) == 0
+            && GuestRef<uint32_t>(cs + kCsLockCount) != 0xFFFFFFFFu)
+        {
+            GuestRef<uint32_t>(cs + 8) = cs + 8;
+            GuestRef<uint32_t>(cs + 12) = cs + 8;
+            GuestRef<int32_t>(cs + kCsLockCount) = -1;
+            GuestRef<int32_t>(cs + kCsRecursionCount) = 0;
+            GuestRef<uint32_t>(cs + kCsOwningThread) = 0;
+        }
+
         uint32_t expected = ByteSwap(uint32_t(-1));
         if (GuestAtomic(cs + kCsLockCount).compare_exchange_strong(expected, 0))
         {

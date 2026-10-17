@@ -7,6 +7,7 @@
 #include "imports.h"
 #include "module.h"
 #include "objects.h"
+#include "config/env.h"
 #include "thread.h"
 #include "../memory.h"
 
@@ -93,10 +94,21 @@ namespace
 
 // --- Handles ---------------------------------------------------------------
 
+extern "C" uint32_t h3_dummy_title_handle()
+{
+    auto thread = std::make_shared<Thread>();
+    thread->exited = true;
+    thread->exitCode = 0;
+    return CreateHandle(thread);
+}
+
 // NTSTATUS NtClose(HANDLE handle)
 PPC_FUNC(__imp__NtClose)
 {
-    ctx.r3.u64 = CloseHandle(ctx.r3.u32) ? kStatusSuccess : kStatusInvalidHandle;
+    bool closed = CloseHandle(ctx.r3.u32);
+    if (!closed && ctx.r3.u32 != 0)
+        fprintf(stderr, "[close] invalid handle %08X\n", ctx.r3.u32);
+    ctx.r3.u64 = closed ? kStatusSuccess : kStatusInvalidHandle;
 }
 
 // NTSTATUS NtDuplicateObject(HANDLE source, PHANDLE target, ULONG options)
@@ -357,7 +369,44 @@ PPC_FUNC(__imp__NtRemoveIoCompletion)
 //     BOOLEAN alertable, PLARGE_INTEGER timeout)
 PPC_FUNC(__imp__NtWaitForSingleObjectEx)
 {
-    ctx.r3.u64 = Wait({ LookupHandle(ctx.r3.u32) }, false, ctx.r6.u32, ctx.r5.u8 != 0, ctx);
+    auto object = LookupHandle(ctx.r3.u32);
+    static const bool log = EnvFlag("H3_LOG_WAITS");
+    if (log && object)
+    {
+        uint32_t threadId = 0;
+        if (auto thread = std::dynamic_pointer_cast<Thread>(object))
+            threadId = thread->threadId;
+        auto self = CurrentThreadObject();
+        uint32_t backChain = GuestRef<uint32_t>(ctx.r1.u32);
+        uint32_t caller = backChain ? uint32_t(GuestRef<uint32_t>(backChain - 8)) : 0;
+        uint32_t owner = 0;
+        int32_t recursion = 0, count = 0;
+        if (auto mutant = std::dynamic_pointer_cast<Mutant>(object))
+            owner = mutant->owner, recursion = mutant->recursion;
+        else if (auto semaphore = std::dynamic_pointer_cast<Semaphore>(object))
+            count = semaphore->count;
+        fprintf(stderr, "[wait] self %u kthread %08X handle %08X type %u name \"%s\" object-thread %u owner %08X recursion %d count %d lr %08X caller %08X timeout %08X\n",
+            self ? self->threadId : 0, CurrentKThread(), ctx.r3.u32, unsigned(object->type), object->name.c_str(),
+            threadId, owner, recursion, count, uint32_t(ctx.lr), caller, ctx.r6.u32);
+        if (auto thread = std::dynamic_pointer_cast<Thread>(object))
+        {
+            static std::atomic<int> dumps{0};
+            if (thread->guest && dumps.fetch_add(1, std::memory_order_relaxed) < 4)
+            {
+                uint32_t kthread = thread->guest->kthread;
+                fprintf(stderr, "[wait] scheduling host stack dump of thread %u / kthread %08X\n", thread->threadId, kthread);
+                std::thread([kthread] {
+                    for (int i = 0; i < 4; i++)
+                    {
+                        std::this_thread::sleep_for(std::chrono::seconds(8));
+                        fprintf(stderr, "[wait] periodic host stack %d of kthread %08X\n", i, kthread);
+                        DumpHostBacktrace(kthread);
+                    }
+                }).detach();
+            }
+        }
+    }
+    ctx.r3.u64 = Wait({ object }, false, ctx.r6.u32, ctx.r5.u8 != 0, ctx);
 }
 
 // NTSTATUS NtWaitForMultipleObjectsEx(ULONG count, PHANDLE handles, WAIT_TYPE type,
@@ -375,7 +424,19 @@ PPC_FUNC(__imp__NtWaitForMultipleObjectsEx)
 //     KPROCESSOR_MODE mode, BOOLEAN alertable, PLARGE_INTEGER timeout)
 PPC_FUNC(__imp__KeWaitForSingleObject)
 {
-    ctx.r3.u64 = Wait({ ObjectForGuest(ctx.r3.u32) }, false, ctx.r7.u32, ctx.r6.u8 != 0, ctx);
+    auto object = ObjectForGuest(ctx.r3.u32);
+    if (EnvFlag("H3_LOG_WAITS") && object)
+    {
+        auto self = CurrentThreadObject();
+        uint32_t owner = 0;
+        int32_t recursion = 0;
+        if (auto mutant = std::dynamic_pointer_cast<Mutant>(object))
+            owner = mutant->owner, recursion = mutant->recursion;
+        fprintf(stderr, "[kewait] self %u object %08X type %u name \"%s\" owner %08X recursion %d lr %08X timeout %08X\n",
+            self ? self->threadId : 0, ctx.r3.u32, unsigned(object->type), object->name.c_str(),
+            owner, recursion, uint32_t(ctx.lr), ctx.r7.u32);
+    }
+    ctx.r3.u64 = Wait({ object }, false, ctx.r7.u32, ctx.r6.u8 != 0, ctx);
 }
 
 // NTSTATUS KeWaitForMultipleObjects(ULONG count, PVOID* objects, WAIT_TYPE type,
@@ -405,6 +466,8 @@ PPC_FUNC(__imp__ExCreateThread)
     uint32_t threadIdPtr = ctx.r5.u32;
     uint32_t flags = ctx.r9.u32;
 
+    fprintf(stderr, "[thread] ExCreateThread lr=%08X start=%08X ctx=%08X flags=%X\n",
+        uint32_t(ctx.lr), ctx.r7.u32, ctx.r8.u32, flags);
     auto thread = StartGuestThread(stackSize, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, flags & kCreateSuspended);
     // The top byte is a processor mask (Xenia applies it the same way); the
     // thread's KPCR reports the lowest of those hardware threads. XAudio's

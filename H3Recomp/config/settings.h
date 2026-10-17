@@ -136,6 +136,11 @@ namespace h3::config
         // Draw the on-screen Xbox 360 pad overlay and merge its touches
         // with a real gamepad / keyboard.
         bool touchControls = true;
+        // Draw the in-game FPS / CPU / GPU / RAM monitor.
+        bool performanceOverlay = true;
+        // Render guest 4x-MSAA surfaces at 1x. Much faster on mobile GPUs;
+        // the guest's resolved image is the same size, with more aliasing.
+        bool disableMsaa = false;
         // Convert BC textures to ASTC and cache them in the app (0 off,
         // 4 or 6 = square ASTC block size). Mobile Mali GPUs generally
         // sample ASTC but not BC.

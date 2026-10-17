@@ -76,6 +76,8 @@ PPC_FUNC(__imp__XexGetProcedureAddress)
     // Values above 16 bits are pointers to export names, which XEX modules
     // don't have.
     uint32_t address = ordinal <= 0xFFFF ? GetProcAddress(*module, ordinal) : 0;
+    fprintf(stderr, "[loader] XexGetProcedureAddress module %s ordinal %u -> %08X\n",
+        module->name.c_str(), ordinal, address);
     if (address == 0)
     {
         fprintf(stderr, "[loader] %s has no export %u\n", module->name.c_str(), ordinal);

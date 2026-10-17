@@ -62,4 +62,10 @@ namespace h3::kernel
 
     // Address of an export by ordinal, or 0.
     uint32_t GetProcAddress(const Module& module, uint32_t ordinal);
+
+    // Audio Wwise modules whose DllMain wants to relaunch the title. For
+    // boot bring-up they can be represented by a stub module whose exports
+    // are one benign guest function.
+    bool IsAudioStubModule(std::string_view name);
+    uint32_t AudioStubAddress();
 }

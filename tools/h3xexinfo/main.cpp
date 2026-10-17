@@ -261,6 +261,9 @@ int main(int argc, char* argv[])
         printf("\nWrote image (0x%08X bytes) to %s\n", image.size, dumpPath);
     }
 
+    for (const auto& [address, library] : ModuleImportLibraries(file.data()))
+        printf("Module import thunk %zX from %s\n", address, library.c_str());
+
     if (stubsPath != nullptr)
     {
         if (!WriteStubs(imports, ModuleImportLibraries(file.data()), stubsPath))

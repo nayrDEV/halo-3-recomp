@@ -418,14 +418,8 @@ namespace h3::input
             state.thumbRY = Merge(state.thumbRY, invert(SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_RIGHTY)));
         }
 
-        touch::State touchState = touch::GetState();
-        state.buttons |= touchState.buttons;
-        state.leftTrigger = std::max(state.leftTrigger, touchState.leftTrigger);
-        state.rightTrigger = std::max(state.rightTrigger, touchState.rightTrigger);
-        state.thumbLX = Merge(state.thumbLX, touchState.leftX);
-        state.thumbLY = Merge(state.thumbLY, touchState.leftY);
-        state.thumbRX = Merge(state.thumbRX, touchState.rightX);
-        state.thumbRY = Merge(state.thumbRY, touchState.rightY);
+        // The on-screen pad is sampled directly in XamInputGetState so a
+        // renderer stall can't leave a stale pressed button in this snapshot.
 
         std::lock_guard lock(g_mutex);
         bool changed = state.buttons != g_state.buttons || state.leftTrigger != g_state.leftTrigger ||

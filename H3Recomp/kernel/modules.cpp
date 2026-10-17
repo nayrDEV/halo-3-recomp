@@ -10,6 +10,7 @@
 #include <ppc_recomp_shared.h>
 
 #include "modules.h"
+#include <unistd.h>
 #include "imports.h"
 #include "module.h"
 #include "variables.h"
@@ -27,10 +28,17 @@
 #include <memory>
 #include <mutex>
 
+extern "C" bool h3_in_module_dllmain = false;
+
 namespace h3::kernel
 {
     namespace
     {
+        void AudioStub(PPCContext& ctx, uint8_t*)
+        {
+            ctx.r3.u64 = 0;
+        }
+
         constexpr uint32_t kDllProcessAttach = 1;
 
         // XEX header fields.
@@ -282,7 +290,9 @@ namespace h3::kernel
 
     Module* LoadModule(std::string_view guestPath, PPCContext& ctx)
     {
-        std::lock_guard lock(g_mutex);
+        fprintf(stderr, "[loader] tid %ld request %.*s\n", (long)gettid(), int(guestPath.size()), guestPath.data());
+        std::unique_lock<std::recursive_mutex> lock(g_mutex);
+        fprintf(stderr, "[loader] tid %ld lock acquired for %.*s\n", (long)gettid(), int(guestPath.size()), guestPath.data());
 
         std::string_view name = guestPath.substr(guestPath.find_last_of("\\:") + 1);
         if (Module* module = FindModule(name))
@@ -292,6 +302,8 @@ namespace h3::kernel
         }
 
         auto path = ResolveGuestPath(guestPath);
+        fprintf(stderr, "[loader] resolved %.*s -> %s\n", int(guestPath.size()), guestPath.data(),
+            path ? path->string().c_str() : "(null)");
         if (!path)
         {
             fprintf(stderr, "[loader] %.*s not found\n", int(guestPath.size()), guestPath.data());
@@ -299,6 +311,7 @@ namespace h3::kernel
         }
 
         std::vector<uint8_t> file = LoadFile(*path);
+        fprintf(stderr, "[loader] read %zu bytes from %s\n", file.size(), path->string().c_str());
         Image image = Image::ParseImage(file.data(), file.size());
         if (image.data == nullptr)
         {
@@ -307,6 +320,7 @@ namespace h3::kernel
         }
 
         const RecompiledModule* recompiled = FindRecompiledModule(image);
+        fprintf(stderr, "[loader] image base %zX size %zX recompiled %s\n", image.base, image.size, recompiled ? "yes" : "no");
         if (recompiled == nullptr)
         {
             fprintf(stderr, "[loader] %s (base 0x%zX size 0x%X) wasn't recompiled; "
@@ -332,14 +346,20 @@ namespace h3::kernel
 
         g_modules.push_back(CreateModule(path->filename().string(), image, file));
         Module* module = g_modules.back().get();
+        fprintf(stderr, "[loader] resolving imports for %s\n", module->name.c_str());
         if (!ResolveImports(image, *module, &ctx))
             return nullptr;
+        fprintf(stderr, "[loader] imports resolved for %s, entry %08X\n", module->name.c_str(), module->entryPoint);
 
         // DllMain(handle, DLL_PROCESS_ATTACH, reserved), on the loading
         // thread like the real loader. Run on a copy of the context so the
-        // caller's registers survive.
+        // caller's registers survive. The module list is complete at this
+        // point, so drop the loader lock: WaveShell's DllMain waits for the
+        // ASYNC_IO thread, and that thread may itself need to load a module.
+        lock.unlock();
         if (module->entryPoint != 0)
         {
+            fprintf(stderr, "[loader] tid %ld calling DllMain %s\n", (long)gettid(), module->name.c_str());
             PPCContext entryCtx = ctx;
             entryCtx.r3.u64 = module->ldrEntry;
             entryCtx.r4.u64 = kDllProcessAttach;
@@ -347,9 +367,10 @@ namespace h3::kernel
             (PPC_LOOKUP_FUNC(g_base, module->entryPoint))(entryCtx, g_base);
             if (entryCtx.r3.u32 == 0)
                 fprintf(stderr, "[loader] %s: DllMain failed\n", module->name.c_str());
+            fprintf(stderr, "[loader] tid %ld DllMain returned %s r3=%08X\n", (long)gettid(), module->name.c_str(), entryCtx.r3.u32);
         }
 
-        fprintf(stderr, "[loader] loaded %s at 0x%08X\n", module->name.c_str(), module->base);
+        fprintf(stderr, "[loader] tid %ld loaded %s at 0x%08X\n", (long)gettid(), module->name.c_str(), module->base);
         return module;
     }
 

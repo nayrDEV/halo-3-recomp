@@ -11,6 +11,7 @@
 #include "gpu/renderer.h"
 #include "input/input.h"
 #include "input/touch.h"
+#include "perf/overlay.h"
 
 #include <SDL3/SDL.h>
 
@@ -19,6 +20,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <pthread.h>
+#include <thread>
 #include <unordered_map>
 
 namespace h3::debug
@@ -229,16 +232,28 @@ namespace h3::video
     int RunEventLoop()
     {
         using Clock = std::chrono::steady_clock;
+        pthread_setname_np(pthread_self(), "H3Window");
 
         int exitCode = 0;
         uint32_t lastFrame = 0;
         auto lastTitleUpdate = Clock::now();
+        auto lastOverlayUpdate = Clock::now();
+        uint64_t lastGameSerial = 0;
 
         for (;;)
         {
+            bool redraw = false;
             SDL_Event event;
             while (SDL_PollEvent(&event))
             {
+                // Any input can change the on-screen pad or the game view.
+                if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP ||
+                    event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                    event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_FINGER_DOWN ||
+                    event.type == SDL_EVENT_FINGER_MOTION || event.type == SDL_EVENT_FINGER_UP ||
+                    event.type == SDL_EVENT_FINGER_CANCELED || event.type == SDL_EVENT_WINDOW_RESIZED ||
+                    event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+                    redraw = true;
                 if (event.type == SDL_EVENT_QUIT)
                     return exitCode;
                 if (event.type == g_quitEvent)
@@ -283,18 +298,43 @@ namespace h3::video
                 lastTitleUpdate = now;
             }
 
-            // The GPU draws nothing yet; show the Bink video if one is
-            // decoding. Vsync paces the loop.
+            // Only present when the guest actually produced a new frame (or
+            // Bink is decoding). Redrawing in lockstep with the display when
+            // the emulator is behind wastes the GPU and a CPU core.
+            gpu::renderer::Frame probe;
+            bool hasGameFrame = gpu::renderer::AcquireFrame(probe);
+            if (hasGameFrame)
+            {
+                if (probe.serial != lastGameSerial)
+                {
+                    lastGameSerial = probe.serial;
+                    redraw = true;
+                }
+            }
+            else
+            {
+                redraw = true;  // Bink / startup
+            }
+            if (config::Active().video.performanceOverlay && now - lastOverlayUpdate >= std::chrono::milliseconds(250))
+            {
+                lastOverlayUpdate = now;
+                redraw = true;
+            }
+            if (!redraw)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
             SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
             SDL_RenderClear(g_renderer);
             if (!DrawGameFrame())
                 DrawBinkFrame();
+            int outputWidth = 0, outputHeight = 0;
+            SDL_GetCurrentRenderOutputSize(g_renderer, &outputWidth, &outputHeight);
             if (input::touch::Enabled() && input::touch::HasTouchDevice())
-            {
-                int outputWidth = 0, outputHeight = 0;
-                SDL_GetCurrentRenderOutputSize(g_renderer, &outputWidth, &outputHeight);
                 input::touch::Draw(g_renderer, float(outputWidth), float(outputHeight));
-            }
+            perf::Draw(g_renderer, float(outputWidth), float(outputHeight), g_framesPresented.load());
             SDL_RenderPresent(g_renderer);
         }
     }

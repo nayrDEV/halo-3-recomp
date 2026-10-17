@@ -82,6 +82,7 @@ set(H3_RUNTIME_SOURCES
     "${H3_ROOT}/H3Recomp/gpu/texture_cache.cpp"
     "${H3_ROOT}/H3Recomp/input/input.cpp"
     "${H3_ROOT}/H3Recomp/input/touch.cpp"
+    "${H3_ROOT}/H3Recomp/perf/overlay.cpp"
     "${H3_ROOT}/H3Recomp/debug/first_calls.cpp"
     "${H3_ROOT}/H3Recomp/debug/profiler.cpp"
     "${H3_ROOT}/H3Recomp/debug/state_hash.cpp"

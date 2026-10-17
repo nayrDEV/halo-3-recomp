@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
 
 struct SDL_GPUDevice;
 struct SDL_GPUTexture;
@@ -58,4 +59,18 @@ namespace h3::gpu::renderer
         uint64_t serial = 0;
     };
     bool AcquireFrame(Frame& frame);
+
+    // Latest frame's workload, for the in-game performance monitor.
+    struct PerformanceSnapshot
+    {
+        uint32_t frameDraws = 0;
+        uint32_t frameFlushes = 0;
+        uint32_t pipelines = 0;
+        uint32_t frameWaitMs = 0;
+        uint64_t textureUploads = 0;
+        uint64_t textureUploadBytes = 0;
+        uint32_t colorTargets = 0;
+        uint32_t targetWidth = 0, targetHeight = 0;
+    };
+    PerformanceSnapshot GetPerformance();
 }

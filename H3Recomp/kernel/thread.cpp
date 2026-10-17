@@ -23,10 +23,14 @@
 
 #include <pthread.h>
 #include <signal.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
-#if !defined(__ANDROID__)
 #include <execinfo.h>
+#if !defined(__ANDROID__)
 extern "C" char __executable_start;
+#else
+#include <dlfcn.h>
 #endif
 
 namespace h3::kernel
@@ -39,19 +43,27 @@ namespace h3::kernel
         // DumpHostBacktrace.
         std::mutex g_hostThreadMutex;
         std::map<uint32_t, pthread_t> g_hostThreads;
+        std::map<uint32_t, pid_t> g_hostTids;
 
-#if !defined(__ANDROID__)
         // DumpHostBacktrace's hand-off: the target thread's SIGUSR2 handler
         // fills these.
         constexpr int kMaxBacktraceFrames = 48;
         void* g_backtrace[kMaxBacktraceFrames];
         std::atomic<int> g_backtraceFrames{ -1 };
 
+#if defined(__ANDROID__)
+        using BacktraceFunction = int (*)(void**, int);
+        BacktraceFunction g_backtraceFunction = reinterpret_cast<BacktraceFunction>(dlsym(RTLD_DEFAULT, "backtrace"));
+#endif
         void OnBacktraceSignal(int)
         {
+#if defined(__ANDROID__)
+            if (g_backtraceFunction)
+                g_backtraceFrames.store(g_backtraceFunction(g_backtrace, kMaxBacktraceFrames));
+#else
             g_backtraceFrames.store(backtrace(g_backtrace, kMaxBacktraceFrames));
-        }
 #endif
+        }
 
         std::mutex g_tlsMutex;
         std::vector<bool> g_tlsUsed;
@@ -130,21 +142,25 @@ namespace h3::kernel
         t_currentThread = thread;
         std::lock_guard lock(g_hostThreadMutex);
         g_hostThreads[thread->kthread] = pthread_self();
+        g_hostTids[thread->kthread] = pid_t(syscall(SYS_gettid));
     }
 
     void DumpHostBacktrace(uint32_t kthread)
     {
-#if defined(__ANDROID__)
-        (void)kthread;
-        return;
-#else
         pthread_t target;
+        pid_t targetTid = 0;
         {
             std::lock_guard lock(g_hostThreadMutex);
             auto found = g_hostThreads.find(kthread);
             if (found == g_hostThreads.end())
+            {
+                fprintf(stderr, "[kernel] no host thread registered for kthread %08X\n", kthread);
                 return;
+            }
             target = found->second;
+            auto tid = g_hostTids.find(kthread);
+            if (tid != g_hostTids.end())
+                targetTid = tid->second;
         }
         static std::mutex dumpMutex;  // one dump at a time (shared buffer)
         std::lock_guard lock(dumpMutex);
@@ -158,18 +174,50 @@ namespace h3::kernel
         if (!installed)
             return;
         g_backtraceFrames.store(-1);
+#if defined(__ANDROID__)
+        if (targetTid <= 0 || syscall(SYS_tgkill, getpid(), targetTid, SIGUSR2) != 0)
+            return;
+#else
         if (pthread_kill(target, SIGUSR2) != 0)
             return;
+#endif
         constexpr int kWaitMs = 200;
         for (int i = 0; i < kWaitMs && g_backtraceFrames.load() < 0; i++)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         int frames = g_backtraceFrames.load();
+#if !defined(__ANDROID__)
         uintptr_t executable = reinterpret_cast<uintptr_t>(&__executable_start);
         fprintf(stderr, "[kernel]   thread %08X host stack (executable offsets; nm -C -n to name):", kthread);
         for (int i = 0; i < frames; i++)
             fprintf(stderr, " %lx", static_cast<unsigned long>(reinterpret_cast<uintptr_t>(g_backtrace[i]) - executable));
-        fprintf(stderr, "\n");
+#else
+        fprintf(stderr, "[kernel]   thread %08X host stack:", kthread);
+        for (int i = 0; i < frames; i++)
+        {
+            Dl_info info{};
+            if (dladdr(g_backtrace[i], &info) && info.dli_sname)
+                fprintf(stderr, " %s+0x%lx", info.dli_sname,
+                    static_cast<unsigned long>(reinterpret_cast<uintptr_t>(g_backtrace[i]) - reinterpret_cast<uintptr_t>(info.dli_saddr)));
+            else
+                fprintf(stderr, " %p", g_backtrace[i]);
+        }
 #endif
+        fprintf(stderr, "\n");
+    }
+
+    void DumpAllHostThreads()
+    {
+        std::vector<uint32_t> threads;
+        {
+            std::lock_guard lock(g_hostThreadMutex);
+            for (const auto& [kthread, host] : g_hostThreads)
+                threads.push_back(kthread);
+        }
+        for (uint32_t kthread : threads)
+        {
+            fprintf(stderr, "[watchdog] thread %08X\n", kthread);
+            DumpHostBacktrace(kthread);
+        }
     }
 
     GuestThread* CurrentThread()
@@ -191,9 +239,14 @@ namespace h3::kernel
     {
         auto thread = MakeThreadObject(AllocateGuestThread(stackSize));
         thread->suspendCount = suspended ? 1 : 0;
+        fprintf(stderr, "[thread] start id %u start %08X xapi %08X suspended %d kthread %08X\n",
+            thread->threadId, start, xapiStartup, suspended ? 1 : 0, thread->guest->kthread);
 
         std::thread([thread, xapiStartup, start, context]
         {
+            char threadName[16];
+            snprintf(threadName, sizeof(threadName), "H3Guest%u", thread->threadId);
+            pthread_setname_np(pthread_self(), threadName);
             RegisterThreadObject(thread);
 
             {
@@ -253,6 +306,7 @@ namespace h3::kernel
     {
         auto lock = DispatcherLock();
         uint32_t previous = thread.suspendCount;
+        fprintf(stderr, "[thread] resume id %u previous %u\n", thread.threadId, previous);
         if (thread.suspendCount > 0 && --thread.suspendCount == 0)
             NotifyDispatcher();
         return previous;

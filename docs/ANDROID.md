@@ -38,6 +38,17 @@ inspect it.
 The ISO importer is an XDVDFS (XGD2/XGD1/XGD3/plain XISO) reader ported from
 `tools/xdvdfs_extract.py`; it copies the picked content to `game/`.
 
+### Saves
+
+The PROFILE card has **SAVE FOLDER**, **EXPORT** and **IMPORT**:
+
+- **EXPORT** opens Android's create-document picker and writes a `.zip` of
+  `hdd/` (cache partitions and `profile_settings.bin`) plus `settings.ini`.
+- **IMPORT** opens the document picker, unpacks a save archive into
+  `hdd/`, and keeps the previous saves in `hdd.bak` as a fallback. Start the
+  game afterwards so it reads the imported profile.
+- Save archives are ordinary zips; there is no proprietary wrapper.
+
 ## Build
 
 Requirements: Linux x86-64 (or another host with the NDK), Android SDK 35,

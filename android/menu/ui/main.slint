@@ -126,6 +126,8 @@ export component MainWindow inherits Window {
     callback import-folder();
     callback play();
     callback open-settings-folder();
+    callback export-saves();
+    callback import-saves();
 
     // Full-window backdrop. The ring is decorative and always centered in
     // the right half, independent of the scrollable content.
@@ -294,9 +296,19 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             spacing: 6px;
                             MenuButton {
-                                label: "OPEN SAVE FOLDER";
+                                label: "SAVE FOLDER";
                                 horizontal-stretch: 1;
                                 clicked => { root.open-settings-folder(); }
+                            }
+                            MenuButton {
+                                label: "EXPORT";
+                                horizontal-stretch: 1;
+                                clicked => { root.export-saves(); }
+                            }
+                            MenuButton {
+                                label: "IMPORT";
+                                horizontal-stretch: 1;
+                                clicked => { root.import-saves(); }
                             }
                         }
                     }

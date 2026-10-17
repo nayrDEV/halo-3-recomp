@@ -13,8 +13,12 @@ namespace h3::android
     void PickFolder();
     void OpenFolder(const std::string& path);
     void StartGame();
+    void ExportSaves();
+    void ImportSaves();
 
     // Called by the Java activity / extractor when work finishes.
     void OnImportFinished(const std::string& path, const std::string& error);
     void OnExtractFinished(const std::string& path, const std::string& error);
+    void OnSavesExported(const std::string& path, const std::string& error);
+    void OnSavesImported(const std::string& path, const std::string& error);
 }

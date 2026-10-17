@@ -8,12 +8,18 @@ import android.widget.Toast;
 
 import androidx.documentfile.provider.DocumentFile;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Slint launcher activity. It is a NativeActivity so Slint's Android backend
@@ -23,6 +29,8 @@ import java.util.concurrent.Executors;
 public class H3SlintActivity extends NativeActivity {
     private static final int REQUEST_FOLDER = 1001;
     private static final int REQUEST_ISO = 1002;
+    private static final int REQUEST_EXPORT_SAVES = 1003;
+    private static final int REQUEST_IMPORT_SAVES = 1004;
 
     static {
         System.loadLibrary("slintmenu");
@@ -34,6 +42,8 @@ public class H3SlintActivity extends NativeActivity {
     private native void nativeInit(String root);
     private static native void nativeImportFinished(String path, String error);
     private static native void nativeExtractIso(String isoPath);
+    private static native void nativeSavesExported(String path, String error);
+    private static native void nativeSavesImported(String path, String error);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,11 +96,38 @@ public class H3SlintActivity extends NativeActivity {
         });
     }
 
+    public void exportSaves() {
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(Intent.EXTRA_TITLE, "Halo3-saves.zip");
+            startActivityForResult(intent, REQUEST_EXPORT_SAVES);
+        });
+    }
+
+    public void importSaves() {
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            startActivityForResult(intent, REQUEST_IMPORT_SAVES);
+        });
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            nativeImportFinished("", "Import cancelled.");
+            if (requestCode == REQUEST_EXPORT_SAVES) {
+                nativeSavesExported("", "Export cancelled.");
+            } else if (requestCode == REQUEST_IMPORT_SAVES) {
+                nativeSavesImported("", "Import cancelled.");
+            } else {
+                nativeImportFinished("", "Import cancelled.");
+            }
             return;
         }
 
@@ -101,9 +138,19 @@ public class H3SlintActivity extends NativeActivity {
                     importFolder(uri);
                 } else if (requestCode == REQUEST_ISO) {
                     importIso(uri);
+                } else if (requestCode == REQUEST_EXPORT_SAVES) {
+                    exportSaves(uri);
+                } else if (requestCode == REQUEST_IMPORT_SAVES) {
+                    importSaves(uri);
                 }
             } catch (Exception e) {
-                nativeImportFinished("", "Import failed: " + e.getMessage());
+                if (requestCode == REQUEST_EXPORT_SAVES) {
+                    nativeSavesExported("", "Save export failed: " + e.getMessage());
+                } else if (requestCode == REQUEST_IMPORT_SAVES) {
+                    nativeSavesImported("", "Save import failed: " + e.getMessage());
+                } else {
+                    nativeImportFinished("", "Import failed: " + e.getMessage());
+                }
             }
         });
     }
@@ -153,6 +200,160 @@ public class H3SlintActivity extends NativeActivity {
             }
         }
         nativeExtractIso(iso.getAbsolutePath());
+    }
+
+    private void exportSaves(Uri destination) throws Exception {
+        OutputStream raw = getContentResolver().openOutputStream(destination);
+        if (raw == null) {
+            nativeSavesExported("", "Can't open the selected save file.");
+            return;
+        }
+        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
+            File hdd = new File(gameRoot, "hdd");
+            zipDirectory(hdd, "hdd", zip);
+            File settings = new File(gameRoot, "settings.ini");
+            if (settings.isFile()) {
+                zip.putNextEntry(new ZipEntry("settings.ini"));
+                try (InputStream in = new FileInputStream(settings)) {
+                    copyStream(in, zip);
+                }
+                zip.closeEntry();
+            }
+        }
+        nativeSavesExported("", "");
+    }
+
+    private void zipDirectory(File directory, String prefix, ZipOutputStream zip) throws Exception {
+        File[] files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            String name = prefix + "/" + file.getName();
+            if (file.isDirectory()) {
+                zip.putNextEntry(new ZipEntry(name + "/"));
+                zip.closeEntry();
+                zipDirectory(file, name, zip);
+            } else {
+                zip.putNextEntry(new ZipEntry(name));
+                try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+                    copyStream(in, zip);
+                }
+                zip.closeEntry();
+            }
+        }
+    }
+
+    private void copyStream(InputStream in, OutputStream out) throws Exception {
+        byte[] buffer = new byte[1024 * 1024];
+        int count;
+        while ((count = in.read(buffer)) > 0) {
+            out.write(buffer, 0, count);
+        }
+    }
+
+    private void deleteTree(File file) {
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteTree(child);
+            }
+        }
+        file.delete();
+    }
+
+    private void importSaves(Uri source) throws Exception {
+        File staging = new File(getCacheDir(), "h3-saves-import");
+        deleteTree(staging);
+        if (!staging.mkdirs()) {
+            nativeSavesImported("", "Can't create the save staging folder.");
+            return;
+        }
+
+        InputStream raw = getContentResolver().openInputStream(source);
+        if (raw == null) {
+            nativeSavesImported("", "Can't open the selected save archive.");
+            return;
+        }
+        try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
+            String canonicalRoot = staging.getCanonicalPath() + File.separator;
+            ZipEntry entry;
+            byte[] buffer = new byte[1024 * 1024];
+            while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName().replace('\\', '/');
+                if (name.isEmpty() || name.startsWith("/") || name.contains("..")) {
+                    continue;
+                }
+                File output = new File(staging, name);
+                if (!output.getCanonicalPath().startsWith(canonicalRoot)) {
+                    continue;
+                }
+                if (entry.isDirectory()) {
+                    output.mkdirs();
+                } else {
+                    output.getParentFile().mkdirs();
+                    try (OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
+                        int count;
+                        while ((count = zip.read(buffer)) > 0) {
+                            out.write(buffer, 0, count);
+                        }
+                    }
+                }
+            }
+        }
+
+        File sourceRoot = new File(staging, "hdd");
+        if (sourceRoot.isDirectory() && sourceRoot.listFiles() != null) {
+            // The export puts settings.ini next to hdd/; restore it too.
+            File importedSettings = new File(staging, "settings.ini");
+            if (importedSettings.isFile()) {
+                File settings = new File(gameRoot, "settings.ini");
+                try (InputStream in = new BufferedInputStream(new FileInputStream(importedSettings));
+                     OutputStream out = new BufferedOutputStream(new FileOutputStream(settings))) {
+                    copyStream(in, out);
+                }
+            }
+        } else {
+            sourceRoot = staging;
+        }
+        File[] contents = sourceRoot.listFiles();
+        if (contents == null || contents.length == 0) {
+            nativeSavesImported("", "The archive contains no save files.");
+            return;
+        }
+
+        File hdd = new File(gameRoot, "hdd");
+        File backup = new File(gameRoot, "hdd.bak");
+        deleteTree(backup);
+        if (hdd.exists() && !hdd.renameTo(backup)) {
+            nativeSavesImported("", "Can't back up the current saves.");
+            return;
+        }
+        if (!sourceRoot.renameTo(hdd)) {
+            // Cache and files directories can be on different mounts.
+            hdd.mkdirs();
+            copyFileTree(sourceRoot, hdd);
+            deleteTree(sourceRoot);
+        }
+        deleteTree(staging);
+        nativeSavesImported("", "");
+    }
+
+    private void copyFileTree(File source, File target) throws Exception {
+        if (source.isDirectory()) {
+            target.mkdirs();
+            File[] children = source.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    copyFileTree(child, new File(target, child.getName()));
+                }
+            }
+        } else {
+            try (InputStream in = new BufferedInputStream(new FileInputStream(source));
+                 OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+                copyStream(in, out);
+            }
+        }
     }
 
     private void copyTree(DocumentFile source, File target) throws Exception {

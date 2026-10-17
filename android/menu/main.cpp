@@ -105,6 +105,26 @@ namespace h3::android
             RefreshGameState();
         });
     }
+
+    void OnSavesExported(const std::string& path, const std::string& error)
+    {
+        slint::invoke_from_event_loop([path, error] {
+            if (!g_ui)
+                return;
+            (*g_ui)->set_importing(false);
+            SetStatus(error.empty() ? "Saves exported." : error);
+        });
+    }
+
+    void OnSavesImported(const std::string& path, const std::string& error)
+    {
+        slint::invoke_from_event_loop([path, error] {
+            if (!g_ui)
+                return;
+            (*g_ui)->set_importing(false);
+            SetStatus(error.empty() ? "Saves imported. Start the game to load them." : error);
+        });
+    }
 }
 
 #ifdef __ANDROID__
@@ -150,6 +170,16 @@ int main(int argc, char** argv)
         std::error_code error;
         std::filesystem::create_directories(g_root, error);
         h3::android::OpenFolder(g_root.string());
+    });
+
+    ui->on_export_saves([] {
+        h3::android::ExportSaves();
+        SetStatus("Choose where to save the save archive...");
+    });
+
+    ui->on_import_saves([] {
+        h3::android::ImportSaves();
+        SetStatus("Choose a Halo 3 save archive (.zip)...");
     });
 
     ui->on_play([ui] {

@@ -104,6 +104,13 @@ on-screen pad working. Performance is still far from 60 fps; see
 screenshots. Build/install instructions and current limitations are in
 [docs/ANDROID.md](docs/ANDROID.md).
 
+The Android arm64 bring-up was developed with **DeepSeek V4.1 Flash** in
+OpenCode. The 0.1.0 pre-release notes describe the work and the planned
+continuation in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md). The port
+will continue on the `android-arm64` branch; renderer batching, pass
+reduction, system-constant storage, internal resolution scaling and effect
+accuracy are the next priorities.
+
 ### Launcher
 
 `build/release/H3Launcher/H3Launcher` edits the settings and starts the game.

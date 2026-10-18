@@ -16,6 +16,17 @@ recompilation base. It is a work-in-progress port, not a finished game.
 - Toggleable in-game performance overlay: FPS, CPU, GPU busy/clock, RAM,
   target size, GPU wait, draws, passes and pipelines.
 
+## How this port was made
+
+The Android arm64 bring-up and renderer work were done in an OpenCode
+session using **DeepSeek V4.1 Flash** as the coding agent, starting from the
+public PC recompilation base
+[george0815/halo-3-recomp](https://github.com/george0815/halo-3-recomp).
+The work included the Slint launcher and SDL3 Android activity, ISO/folder
+import, internal-storage saves, touch input, BCn/ASTC texture paths, the
+performance overlay and several runtime fixes. The recompiler still consumes
+the user's own `default.xex`; no game code or assets are in this repository.
+
 ## Tested on
 
 Samsung Galaxy A55 (`SM-A556E`, Exynos 1480, Xclipse 530, 8 GB, Android 16).
@@ -39,6 +50,21 @@ audio and touch controls.
   rejects them.
 - Audio and gameplay are functional on the A55, but the port is still
   experimental.
+
+## Continuing the port
+
+The maintainer will continue on the `android-arm64` branch. The next work
+is renderer performance and accuracy, not launcher features:
+
+1. Batch or merge the menu's draw submissions and reduce the 85–87 render
+   passes per frame (the measured 60 fps blocker).
+2. Move per-draw system constants to a storage-buffer path.
+3. Add a true internal render-target downscale plus an upscaling resolve.
+4. Implement `vpkd3d128` packing types 2/3 and complete effect accuracy.
+5. Replace the SMAA/FSR placeholders and add import-time ASTC conversion.
+
+Contributions and experiments are welcome, especially draw batching,
+Vulkan/SDL GPU submission work and A55/Adreno/Mali profiling.
 
 ## Requirements
 

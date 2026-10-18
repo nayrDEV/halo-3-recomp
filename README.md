@@ -1,30 +1,65 @@
-# halo-3-recomp
+# Halo 3 Recomp — Android arm64
 
-An in-progress static recompilation of Halo 3 (Xbox 360) to native PC code,
-with decompilation of individual subsystems as a long-term goal.
+This repository is a **public Android arm64 port built on top of the original
+PC Halo 3 static recompilation**, [george0815/halo-3-recomp](https://github.com/george0815/halo-3-recomp).
+The upstream project does the hard part: it translates the Xbox 360
+`default.xex` into C++ with XenonRecomp, implements the guest machine and
+kernel/XAM runtime, and works toward replacing recompiled functions with
+hand-written decompiled code. This fork keeps that base and its history, then
+adds the Android launcher, mobile runtime and touch-first presentation.
 
-**No game data is included.** You need your own legally dumped copy of the
-game. See [docs/DUMPING.md](docs/DUMPING.md).
+It is not a separate from-scratch emulator or a port of the PC executable.
+The same recompiler pipeline consumes the user's own `default.xex`; the
+Android app only imports the disc data and runs the generated arm64 code.
 
-## How it works
+**No game data is included.** You must supply your own legally dumped copy
+of Halo 3. See [docs/DUMPING.md](docs/DUMPING.md).
 
-1. [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) translates every
-   PowerPC function in the game's `default.xex` into C++
-   (`H3RecompLib/ppc/`, generated and git-ignored).
-2. The runtime (`H3Recomp/`) provides what the 360 used to: guest memory,
-   kernel/XAM imports, graphics, audio, input.
-3. Over time, recompiled functions get replaced with hand-written code.
+## What the Android port adds
 
-This is the same approach as [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp),
-which is the best reference for what a finished runtime looks like.
-[Xenia](https://github.com/xenia-project/xenia) is the reference for kernel
-and GPU behaviour.
+- **Slint launcher** for ISO or folder import, video/AA/texture settings,
+  save export/import and diagnostic log export.
+- **SDL3 game activity** with an on-screen Xbox 360 pad and touch-to-XInput
+  mapping; a gamepad or keyboard/mouse still works.
+- **App-private game data**: imported files, saves, shader cache and texture
+  cache stay inside Android app storage.
+- **BCn and ASTC texture paths**: BCn uploads native BC1/BC2/BC3/BC5 without
+  conversion; ASTC 4x4/6x6 converts once and caches. The launcher exposes
+  both.
+- **Performance overlay**: FPS, frame time, CPU, GPU busy/clock, RAM, target
+  size, GPU wait, draw count, pass count and pipeline count, toggleable from
+  the launcher.
+- **Bring-up fixes** needed by the Android runtime: loader symbol collisions
+  between the game and Wwise modules, 32-bit jump-table dispatch, packed
+  vertex unpacking, guest input polling, save/file-handle lifetime and module
+  loading fixes.
+
+## Current state
+
+The A55 build reaches **Microsoft/Bungie intros, the Halo 3 main menu, the
+Forge lobby and Last Resort gameplay**, with audio and touch controls. The
+first public artifact is the **0.1.0 pre-release** APK on the
+[releases page](https://github.com/nayrDEV/halo-3-recomp/releases).
+
+Rendering performance is still a major limitation: the menu is around 1 fps,
+with roughly 2,200–2,700 draws across 85–87 render passes per frame. A
+draw-free test reaches only ~43 fps and a 320×180 target still gives ~2.5 fps,
+so draw/pass submission and synchronization — not merely resolution — are the
+next blocker. The measured A55 results and screenshots are in
+[docs/A55_RESULTS.md](docs/A55_RESULTS.md). Build and usage instructions are
+in [docs/ANDROID.md](docs/ANDROID.md); the release notes and continuation plan
+are in [docs/RELEASE_0.1.0.md](docs/RELEASE_0.1.0.md).
+
+The Android arm64 work was developed with **DeepSeek V4.1 Flash** in OpenCode.
+The maintainer will continue on the `android-arm64` branch, focused on draw
+batching/pass reduction, system constants as storage, internal render-target
+scaling, effect accuracy and the remaining renderer work.
 
 ## Credits and lineage
 
-- **Original PC Halo 3 recompilation / runtime base:**
+- **Original PC Halo 3 recompilation and runtime:**
   [george0815/halo-3-recomp](https://github.com/george0815/halo-3-recomp).
-  The Android arm64 port in this branch is built on top of that project.
+  This Android fork builds directly on that project and preserves its history.
 - [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) (hedge-dev) for the
   PowerPC static-recompilation toolchain.
 - [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp) for the
